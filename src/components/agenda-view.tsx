@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { collection, doc, getDocs, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Skeleton } from './ui/skeleton';
+import { ThemeToggle } from './theme-toggle';
 
 const initialScheduleData: DaySchedule[] = [
   { day: 'Lunedì', morning: [], afternoon: [], isOpen: false },
@@ -57,6 +58,7 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
   const [schedule, setSchedule] = useState<DaySchedule[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalPeriod, setModalPeriod] = useState<'morning' | 'afternoon'>('morning');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -181,7 +183,7 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
 
   return (
     <div className="min-h-screen bg-background text-foreground font-body">
-      {user.role === 'owner' && <AddSlotModal isOpen={isModalOpen} onOpenChange={setIsModalOpen} onAddSlot={handleAddSlot} />}
+      {user.role === 'owner' && <AddSlotModal isOpen={isModalOpen} onOpenChange={setIsModalOpen} onAddSlot={handleAddSlot} period={modalPeriod} onPeriodChange={setModalPeriod} />}
       
       <header className="p-4 md:p-6 flex justify-between items-center border-b sticky top-0 bg-background/80 backdrop-blur-sm z-10">
         <Link href="/" className="text-2xl font-bold font-headline text-primary">GymAgenda</Link>
@@ -219,6 +221,7 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
               <span className="font-semibold">{user.name}</span>
             </div>
           )}
+          <ThemeToggle />
         </div>
       </header>
 

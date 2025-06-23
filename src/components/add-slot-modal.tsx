@@ -19,11 +19,12 @@ interface AddSlotModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   onAddSlot: (day: DayOfWeek, period: 'morning' | 'afternoon', timeRange: string) => void;
+  period: 'morning' | 'afternoon';
+  onPeriodChange: (period: 'morning' | 'afternoon') => void;
 }
 
-export function AddSlotModal({ isOpen, onOpenChange, onAddSlot }: AddSlotModalProps) {
+export function AddSlotModal({ isOpen, onOpenChange, onAddSlot, period, onPeriodChange }: AddSlotModalProps) {
   const [day, setDay] = useState<DayOfWeek>('Lunedì');
-  const [period, setPeriod] = useState<'morning' | 'afternoon'>('morning');
   const [timeRange, setTimeRange] = useState('');
 
   const handleSubmit = () => {
@@ -59,7 +60,7 @@ export function AddSlotModal({ isOpen, onOpenChange, onAddSlot }: AddSlotModalPr
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="period" className="text-right">Periodo</Label>
-            <Select onValueChange={(value) => setPeriod(value as 'morning' | 'afternoon')} defaultValue={period}>
+            <Select onValueChange={(value) => onPeriodChange(value as 'morning' | 'afternoon')} value={period}>
               <SelectTrigger className="col-span-3">
                 <SelectValue placeholder="Seleziona un periodo" />
               </SelectTrigger>
