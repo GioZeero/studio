@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, type Firestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -10,8 +10,25 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const db = getFirestore(app);
+const isFirebaseConfigured =
+  firebaseConfig.apiKey &&
+  firebaseConfig.authDomain &&
+  firebaseConfig.projectId &&
+  firebaseConfig.storageBucket &&
+  firebaseConfig.messagingSenderId &&
+  firebaseConfig.appId;
+
+let db: Firestore | undefined;
+
+if (isFirebaseConfigured) {
+  try {
+    const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+    db = getFirestore(app);
+  } catch (e) {
+    console.error("Could not initialize Firebase. Please check your credentials.", e);
+  }
+} else {
+  console.warn("Firebase config is incomplete. Please check your .env.local file. All NEXT_PUBLIC_FIREBASE_* variables must be set for Firestore to work.");
+}
 
 export { db };

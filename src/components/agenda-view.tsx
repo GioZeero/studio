@@ -73,6 +73,17 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
   useEffect(() => {
     const fetchSchedule = async () => {
       setLoading(true);
+      if (!db) {
+        toast({
+          title: "Configurazione Firebase Mancante",
+          description: "Le credenziali Firebase non sono state impostate o non sono valide. Controlla il file .env.local e riavvia il server.",
+          variant: "destructive",
+          duration: Infinity,
+        });
+        setSchedule(initialScheduleData);
+        setLoading(false);
+        return;
+      }
       try {
         const scheduleCol = collection(db, 'schedule');
         const scheduleSnapshot = await getDocs(scheduleCol);
@@ -98,7 +109,7 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
         }
       } catch (error) {
         console.error("Error fetching schedule: ", error);
-        toast({ title: "Errore di caricamento", description: "Impossibile caricare gli orari. Assicurati che la configurazione di Firebase sia corretta.", variant: "destructive" });
+        toast({ title: "Errore di caricamento", description: "Impossibile caricare gli orari. Verifica la connessione e le regole di sicurezza di Firestore.", variant: "destructive" });
         setSchedule(initialScheduleData);
       } finally {
         setLoading(false);
@@ -109,6 +120,10 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
   }, [toast]);
 
   const handleAddSlot = async (day: DayOfWeek, period: 'morning' | 'afternoon', timeRange: string) => {
+    if (!db) {
+      toast({ title: "Errore", description: "Firebase non è configurato.", variant: "destructive" });
+      return;
+    }
     const originalSchedule = [...schedule];
     const dayRef = doc(db, 'schedule', day);
     const dayData = schedule.find(d => d.day === day);
@@ -132,6 +147,10 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
   };
 
   const handleBookSlot = async (slotToBook: Slot) => {
+    if (!db) {
+      toast({ title: "Errore", description: "Firebase non è configurato.", variant: "destructive" });
+      return;
+    }
     const originalSchedule = [...schedule];
     const dayOfWeek = schedule.find(day => day.morning.some(s => s.id === slotToBook.id) || day.afternoon.some(s => s.id === slotToBook.id))?.day;
 
@@ -161,6 +180,10 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
   };
 
   const handleResetWeek = async () => {
+    if (!db) {
+      toast({ title: "Errore", description: "Firebase non è configurato.", variant: "destructive" });
+      return;
+    }
     const batch = writeBatch(db);
     schedule.forEach(daySchedule => {
       const dayRef = doc(db, 'schedule', daySchedule.day);
