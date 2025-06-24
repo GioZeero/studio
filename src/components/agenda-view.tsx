@@ -78,7 +78,6 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
           title: "Configurazione Firebase Mancante",
           description: "Le credenziali Firebase non sono state impostate o non sono valide. Controlla il file .env.local e riavvia il server.",
           variant: "destructive",
-          duration: Infinity,
         });
         setSchedule(initialScheduleData);
         setLoading(false);
