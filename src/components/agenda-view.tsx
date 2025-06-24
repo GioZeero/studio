@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { Calendar, Clock, Plus, User, Trash2, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
 import { AddSlotModal } from './add-slot-modal';
 import { DeleteSlotModal } from './delete-slot-modal';
 import type { DayOfWeek, DaySchedule, Slot } from '@/lib/types';
@@ -60,26 +59,12 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [modalPeriod, setModalPeriod] = useState<'morning' | 'afternoon'>('morning');
-  const { toast } = useToast();
-
-  useEffect(() => {
-    if (user.role === 'owner') {
-      toast({
-        title: `Benvenuto, ${user.name}!`,
-        description: "Ricordati di aggiungere gli orari della palestra per la settimana.",
-      });
-    }
-  }, [user.name, user.role, toast]);
 
   useEffect(() => {
     const fetchSchedule = async () => {
       setLoading(true);
       if (!db) {
-        toast({
-          title: "Configurazione Firebase Mancante",
-          description: "Le credenziali Firebase non sono state impostate o non sono valide. Controlla il file .env.local e riavvia il server.",
-          variant: "destructive",
-        });
+        console.warn("Configurazione Firebase Mancante. Controlla il file .env.local e riavvia il server.");
         setSchedule(initialScheduleData);
         setLoading(false);
         return;
@@ -109,7 +94,6 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
         }
       } catch (error) {
         console.error("Error fetching schedule: ", error);
-        toast({ title: "Errore di caricamento", description: "Impossibile caricare gli orari. Verifica la connessione e le regole di sicurezza di Firestore.", variant: "destructive" });
         setSchedule(initialScheduleData);
       } finally {
         setLoading(false);
@@ -117,11 +101,11 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
     };
 
     fetchSchedule();
-  }, [toast]);
+  }, []);
 
   const handleAddSlot = async (day: DayOfWeek, period: 'morning' | 'afternoon', timeRange: string) => {
     if (!db) {
-      toast({ title: "Errore", description: "Firebase non è configurato.", variant: "destructive" });
+      console.error("Errore: Firebase non è configurato.");
       return;
     }
     const originalSchedule = [...schedule];
@@ -138,17 +122,15 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
 
     try {
         await updateDoc(dayRef, { [period]: updatedPeriodSlots, isOpen: true });
-        toast({ title: "Orario Aggiunto!", description: `Il nuovo orario per ${day} è stato aggiunto.` });
     } catch (error) {
         console.error("Error adding slot: ", error);
-        toast({ title: "Errore", description: "Impossibile aggiungere l'orario.", variant: "destructive" });
         setSchedule(originalSchedule);
     }
   };
 
   const handleBookSlot = async (slotToBook: Slot) => {
     if (!db) {
-      toast({ title: "Errore", description: "Firebase non è configurato.", variant: "destructive" });
+      console.error("Errore: Firebase non è configurato.");
       return;
     }
     const originalSchedule = [...schedule];
@@ -168,20 +150,15 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
 
     try {
         await updateDoc(dayRef, { morning: updatedMorning, afternoon: updatedAfternoon });
-        toast({
-          title: 'Prenotazione Confermata!',
-          description: `${user.name}, il tuo orario è stato prenotato.`,
-        });
     } catch (error) {
         console.error("Error booking slot: ", error);
-        toast({ title: "Errore", description: "Impossibile prenotare l'orario.", variant: "destructive" });
         setSchedule(originalSchedule);
     }
   };
 
   const handleDeleteSlot = async (day: DayOfWeek, period: 'morning' | 'afternoon', slotId: string) => {
     if (!db) {
-      toast({ title: "Errore", description: "Firebase non è configurato.", variant: "destructive" });
+      console.error("Errore: Firebase non è configurato.");
       return;
     }
     const originalSchedule = JSON.parse(JSON.stringify(schedule));
@@ -200,11 +177,9 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
 
     try {
         await updateDoc(dayRef, { [period]: updatedPeriodSlots, isOpen: dayIsOpen });
-        toast({ title: "Orario Cancellato!", description: `L'orario è stato rimosso.` });
         setIsDeleteModalOpen(false);
     } catch (error) {
         console.error("Error deleting slot: ", error);
-        toast({ title: "Errore", description: "Impossibile cancellare l'orario.", variant: "destructive" });
         setSchedule(originalSchedule);
     }
   };
