@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { AddSlotModal } from './add-slot-modal';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { DeleteSlotModal } from './delete-slot-modal';
 import type { DayOfWeek, DaySchedule, Slot } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { collection, doc, getDocs, updateDoc, writeBatch } from 'firebase/firestore';
@@ -58,6 +58,7 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
   const [schedule, setSchedule] = useState<DaySchedule[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [modalPeriod, setModalPeriod] = useState<'morning' | 'afternoon'>('morning');
   const { toast } = useToast();
 
@@ -178,34 +179,44 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
     }
   };
 
-  const handleResetWeek = async () => {
+  const handleDeleteSlot = async (day: DayOfWeek, period: 'morning' | 'afternoon', slotId: string) => {
     if (!db) {
       toast({ title: "Errore", description: "Firebase non è configurato.", variant: "destructive" });
       return;
     }
-    const batch = writeBatch(db);
-    schedule.forEach(daySchedule => {
-      const dayRef = doc(db, 'schedule', daySchedule.day);
-      batch.update(dayRef, { morning: [], afternoon: [], isOpen: false });
-    });
+    const originalSchedule = JSON.parse(JSON.stringify(schedule));
+    const dayRef = doc(db, 'schedule', day);
+    const dayData = schedule.find(d => d.day === day);
+    if (!dayData) return;
+
+    const updatedPeriodSlots = dayData[period].filter(slot => slot.id !== slotId);
+    
+    const otherPeriod = period === 'morning' ? 'afternoon' : 'morning';
+    const dayIsOpen = updatedPeriodSlots.length > 0 || dayData[otherPeriod].length > 0;
+
+    const updatedDay = { ...dayData, [period]: updatedPeriodSlots, isOpen: dayIsOpen };
+    
+    setSchedule(currentSchedule => currentSchedule.map(d => (d.day === day ? updatedDay : d)));
 
     try {
-        await batch.commit();
-        setSchedule(initialScheduleData);
-        toast({
-            title: 'Orari Azzerati',
-            description: 'Tutti gli orari della settimana sono stati cancellati.',
-            variant: 'destructive',
-        });
+        await updateDoc(dayRef, { [period]: updatedPeriodSlots, isOpen: dayIsOpen });
+        toast({ title: "Orario Cancellato!", description: `L'orario è stato rimosso.` });
+        setIsDeleteModalOpen(false);
     } catch (error) {
-        console.error("Error resetting week: ", error);
-        toast({ title: "Errore", description: "Impossibile azzerare gli orari.", variant: "destructive" });
+        console.error("Error deleting slot: ", error);
+        toast({ title: "Errore", description: "Impossibile cancellare l'orario.", variant: "destructive" });
+        setSchedule(originalSchedule);
     }
   };
 
   return (
     <div className="min-h-screen bg-background text-foreground font-body">
-      {user.role === 'owner' && <AddSlotModal isOpen={isModalOpen} onOpenChange={setIsModalOpen} onAddSlot={handleAddSlot} period={modalPeriod} onPeriodChange={setModalPeriod} />}
+      {user.role === 'owner' && (
+        <>
+          <AddSlotModal isOpen={isModalOpen} onOpenChange={setIsModalOpen} onAddSlot={handleAddSlot} period={modalPeriod} onPeriodChange={setModalPeriod} />
+          <DeleteSlotModal isOpen={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen} schedule={schedule} onDeleteSlot={handleDeleteSlot} />
+        </>
+      )}
       
       <header className="p-4 md:p-6 flex justify-between items-center border-b sticky top-0 bg-background/80 backdrop-blur-sm z-10">
         <Link href="/" className="text-2xl font-bold font-headline text-primary">GymAgenda</Link>
@@ -219,23 +230,9 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
               <Button onClick={() => setIsModalOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" /> Aggiungi Orari
               </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                   <Button variant="destructive" size="icon" aria-label="Azzera settimana">
-                    <Trash2 className="h-4 w-4" />
-                   </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Sei sicuro?</AlertDialogTitle>
-                    <AlertDialogDescription>Questa azione non può essere annullata. Questo azzererà tutti gli orari per la settimana.</AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Annulla</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleResetWeek}>Continua</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <Button variant="destructive" size="icon" aria-label="Cancella orario" onClick={() => setIsDeleteModalOpen(true)}>
+                <Trash2 className="h-4 w-4" />
+              </Button>
             </>
           ) : (
             <div className="flex items-center gap-2 rounded-full border p-2 bg-card">
