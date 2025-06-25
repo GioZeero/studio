@@ -4,6 +4,7 @@ export interface Slot {
   id: string;
   timeRange: string;
   bookedBy: string | null;
+  createdBy?: string;
 }
 
 export interface DaySchedule {

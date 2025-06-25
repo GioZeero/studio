@@ -13,6 +13,7 @@ import { collection, doc, getDocs, updateDoc, writeBatch } from 'firebase/firest
 import { db } from '@/lib/firebase';
 import { Skeleton } from './ui/skeleton';
 import { ThemeToggle } from './theme-toggle';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const initialScheduleData: DaySchedule[] = [
   { day: 'Lunedì', morning: [], afternoon: [], isOpen: false },
@@ -64,7 +65,6 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
     const fetchSchedule = async () => {
       setLoading(true);
       if (!db) {
-        console.warn("Configurazione Firebase Mancante. Controlla il file .env.local e riavvia il server.");
         setSchedule(initialScheduleData);
         setLoading(false);
         return;
@@ -105,7 +105,6 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
 
   const handleAddSlot = async (day: DayOfWeek, period: 'morning' | 'afternoon', timeRange: string) => {
     if (!db) {
-      console.error("Errore: Firebase non è configurato.");
       return;
     }
     const originalSchedule = [...schedule];
@@ -113,7 +112,7 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
     const dayData = schedule.find(d => d.day === day);
     if (!dayData) return;
 
-    const newSlot: Slot = { id: `${day}-${period}-${Date.now()}`, timeRange, bookedBy: null };
+    const newSlot: Slot = { id: `${day}-${period}-${Date.now()}`, timeRange, bookedBy: null, createdBy: user.name };
     const updatedPeriodSlots = [...dayData[period], newSlot].sort((a,b) => a.timeRange.localeCompare(b.timeRange));
     
     const updatedDay = { ...dayData, [period]: updatedPeriodSlots, isOpen: true };
@@ -130,7 +129,6 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
 
   const handleBookSlot = async (slotToBook: Slot) => {
     if (!db) {
-      console.error("Errore: Firebase non è configurato.");
       return;
     }
     const originalSchedule = [...schedule];
@@ -158,7 +156,6 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
 
   const handleDeleteSlot = async (day: DayOfWeek, period: 'morning' | 'afternoon', slotId: string) => {
     if (!db) {
-      console.error("Errore: Firebase non è configurato.");
       return;
     }
     const originalSchedule = JSON.parse(JSON.stringify(schedule));
@@ -181,6 +178,72 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
     } catch (error) {
         console.error("Error deleting slot: ", error);
         setSchedule(originalSchedule);
+    }
+  };
+
+  const renderSlot = (slot: Slot) => {
+    if (user.role === 'owner') {
+      return (
+        <Popover key={slot.id}>
+          <PopoverTrigger asChild>
+            <Badge variant={slot.bookedBy ? "secondary" : "default"} className="p-2 text-sm cursor-pointer select-none">
+              {slot.timeRange} {slot.bookedBy && `(Prenotato)`}
+            </Badge>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto">
+            <div className="grid gap-2 text-sm">
+              <p><strong className="font-medium">Orario:</strong> {slot.timeRange}</p>
+              {slot.createdBy && <p><strong className="font-medium">Creato da:</strong> {slot.createdBy}</p>}
+              <p><strong className="font-medium">Stato:</strong> {slot.bookedBy ? `Prenotato da ${slot.bookedBy}` : 'Libero'}</p>
+            </div>
+          </PopoverContent>
+        </Popover>
+      );
+    }
+
+    // Client View
+    if (slot.bookedBy) {
+      return (
+        <Popover key={slot.id}>
+          <PopoverTrigger asChild>
+            <Button variant="secondary" disabled className="flex-grow transition-all duration-300">
+              <Clock className="mr-2 h-4 w-4" />
+              {slot.timeRange}
+              <span className="ml-2 font-normal opacity-80">- Prenotato da {slot.bookedBy === user.name ? 'te' : slot.bookedBy}</span>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto">
+            <div className="grid gap-2 text-sm">
+                <p><strong className="font-medium">Orario:</strong> {slot.timeRange}</p>
+                {slot.createdBy && <p><strong className="font-medium">Creato da:</strong> {slot.createdBy}</p>}
+                <p><strong className="font-medium">Prenotato da:</strong> {slot.bookedBy}</p>
+            </div>
+          </PopoverContent>
+        </Popover>
+      );
+    } else {
+      return (
+        <Popover key={slot.id}>
+          <PopoverTrigger asChild>
+            <Button variant="default" className="flex-grow transition-all duration-300">
+              <Clock className="mr-2 h-4 w-4" />
+              {slot.timeRange}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-4">
+              <div className="space-y-2 text-center">
+                  <p className="font-semibold">Conferma prenotazione</p>
+                  <div className="text-sm text-muted-foreground">
+                      <p>Orario: {slot.timeRange}</p>
+                      {slot.createdBy && <p>Creato da: {slot.createdBy}</p>}
+                  </div>
+                  <Button onClick={() => handleBookSlot(slot)} className="w-full mt-2" size="sm">
+                      Prenota ora
+                  </Button>
+              </div>
+          </PopoverContent>
+        </Popover>
+      );
     }
   };
 
@@ -240,37 +303,13 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
                       <div className="space-y-3">
                         <h3 className="font-semibold text-lg flex items-center gap-2"><Sun className="text-accent" /> Mattina</h3>
                         <div className="flex flex-wrap gap-2">
-                          {daySchedule.morning.length > 0 ? daySchedule.morning.map(slot => (
-                            user.role === 'client' ? (
-                              <Button key={slot.id} variant={slot.bookedBy ? "secondary" : "default"} onClick={() => handleBookSlot(slot)} disabled={!!slot.bookedBy} className="flex-grow transition-all duration-300">
-                                <Clock className="mr-2 h-4 w-4" />
-                                {slot.timeRange}
-                                {slot.bookedBy && <span className="ml-2 font-normal opacity-80">- Prenotato da {slot.bookedBy === user.name ? 'te' : slot.bookedBy}</span>}
-                              </Button>
-                            ) : (
-                              <Badge key={slot.id} variant={slot.bookedBy ? "secondary" : "default"} className="p-2 text-sm">
-                                {slot.timeRange} {slot.bookedBy && `(Prenotato: ${slot.bookedBy})`}
-                              </Badge>
-                            )
-                          )) : <p className="text-sm text-muted-foreground">Nessun orario per la mattina.</p>}
+                          {daySchedule.morning.length > 0 ? daySchedule.morning.map(renderSlot) : <p className="text-sm text-muted-foreground">Nessun orario per la mattina.</p>}
                         </div>
                       </div>
                       <div className="space-y-3">
                         <h3 className="font-semibold text-lg flex items-center gap-2"><Moon className="text-blue-400" /> Pomeriggio</h3>
                         <div className="flex flex-wrap gap-2">
-                          {daySchedule.afternoon.length > 0 ? daySchedule.afternoon.map(slot => (
-                            user.role === 'client' ? (
-                              <Button key={slot.id} variant={slot.bookedBy ? "secondary" : "default"} onClick={() => handleBookSlot(slot)} disabled={!!slot.bookedBy} className="flex-grow transition-all duration-300">
-                                <Clock className="mr-2 h-4 w-4" />
-                                {slot.timeRange}
-                                {slot.bookedBy && <span className="ml-2 font-normal opacity-80">- Prenotato da {slot.bookedBy === user.name ? 'te' : slot.bookedBy}</span>}
-                              </Button>
-                            ) : (
-                               <Badge key={slot.id} variant={slot.bookedBy ? "secondary" : "default"} className="p-2 text-sm">
-                                {slot.timeRange} {slot.bookedBy && `(Prenotato: ${slot.bookedBy})`}
-                              </Badge>
-                            )
-                          )) : <p className="text-sm text-muted-foreground">Nessun orario per il pomeriggio.</p>}
+                          {daySchedule.afternoon.length > 0 ? daySchedule.afternoon.map(renderSlot) : <p className="text-sm text-muted-foreground">Nessun orario per il pomeriggio.</p>}
                         </div>
                       </div>
                     </CardContent>
