@@ -38,17 +38,10 @@ function AgendaFallback() {
   );
 }
 
-export default function AgendaPage({
-  searchParams,
-}: {
-  searchParams: { [key: string]: string | string[] | undefined };
-}) {
-  const role = searchParams?.role === 'owner' ? 'owner' : 'client';
-  const name = typeof searchParams?.name === 'string' ? decodeURIComponent(searchParams.name) : 'Guest';
-
+export default function AgendaPage() {
   return (
     <Suspense fallback={<AgendaFallback />}>
-      <AgendaView user={{ role, name }} />
+      <AgendaView />
     </Suspense>
   );
 }

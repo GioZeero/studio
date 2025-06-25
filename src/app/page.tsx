@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,18 +8,59 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Dumbbell } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function Home() {
   const [role, setRole] = useState<'owner' | 'client'>('client');
   const [name, setName] = useState('');
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem('gymUser');
+    if (storedUser) {
+      router.push('/agenda');
+    } else {
+      setLoading(false);
+    }
+  }, [router]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
-      router.push(`/agenda?role=${role}&name=${encodeURIComponent(name.trim())}`);
+      const user = { role, name: name.trim() };
+      localStorage.setItem('gymUser', JSON.stringify(user));
+      router.push(`/agenda`);
     }
   };
+
+  if (loading) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-background p-8">
+        <Card className="w-full max-w-md">
+            <CardHeader className="text-center">
+                <Skeleton className="h-16 w-16 rounded-full mx-auto mb-4" />
+                <Skeleton className="h-8 w-48 mx-auto" />
+                <Skeleton className="h-5 w-56 mx-auto mt-2" />
+            </CardHeader>
+            <CardContent className="space-y-6">
+                <div className="space-y-2">
+                    <Skeleton className="h-4 w-24" />
+                    <div className="flex gap-4 pt-2">
+                        <Skeleton className="h-6 w-24" />
+                        <Skeleton className="h-6 w-24" />
+                    </div>
+                </div>
+                <div className="space-y-2">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-10 w-full" />
+                </div>
+                <Skeleton className="h-10 w-full" />
+            </CardContent>
+        </Card>
+      </main>
+    )
+  }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-background p-8">

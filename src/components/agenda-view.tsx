@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Calendar, Clock, Plus, User, Trash2, Sun, Moon } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Calendar, Clock, Plus, User, Trash2, Sun, Moon, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AddSlotModal } from './add-slot-modal';
@@ -54,15 +55,34 @@ function AgendaViewLoader() {
   )
 }
 
-export default function AgendaView({ user }: { user: { role: 'owner' | 'client'; name: string } }) {
+export default function AgendaView() {
+  const [user, setUser] = useState<{ role: 'owner' | 'client'; name: string } | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [schedule, setSchedule] = useState<DaySchedule[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [modalPeriod, setModalPeriod] = useState<'morning' | 'afternoon'>('morning');
+  const router = useRouter();
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem('gymUser');
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (e) {
+        localStorage.removeItem('gymUser');
+        router.replace('/');
+      }
+    } else {
+      router.replace('/');
+    }
+    setCheckingAuth(false);
+  }, [router]);
 
   useEffect(() => {
     const fetchSchedule = async () => {
+      if (!user) return;
       setLoading(true);
       if (!db) {
         setSchedule(initialScheduleData);
@@ -111,12 +131,15 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
     };
 
     fetchSchedule();
-  }, []);
+  }, [user]);
+
+  const handleLogout = () => {
+    localStorage.removeItem('gymUser');
+    router.push('/');
+  };
 
   const handleAddSlot = async (day: DayOfWeek, period: 'morning' | 'afternoon', timeRange: string) => {
-    if (!db) {
-      return;
-    }
+    if (!db || !user) return;
     const originalSchedule = [...schedule];
     const dayRef = doc(db, 'schedule', day);
     const dayData = schedule.find(d => d.day === day);
@@ -138,9 +161,7 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
   };
 
   const handleBookSlot = async (slotToBook: Slot) => {
-    if (!db) {
-      return;
-    }
+    if (!db || !user) return;
     const originalSchedule = [...schedule];
     const dayOfWeek = schedule.find(day => day.morning.some(s => s.id === slotToBook.id) || day.afternoon.some(s => s.id === slotToBook.id))?.day;
 
@@ -155,10 +176,8 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
         if (s.id === slotToBook.id) {
           const isBooked = s.bookedBy.includes(user.name);
           if (isBooked) {
-            // Unbook
             return { ...s, bookedBy: s.bookedBy.filter(name => name !== user.name) };
           } else {
-            // Book
             return { ...s, bookedBy: [...s.bookedBy, user.name].sort() };
           }
         }
@@ -180,9 +199,7 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
   };
 
   const handleDeleteSlot = async (day: DayOfWeek, period: 'morning' | 'afternoon', slotId: string) => {
-    if (!db) {
-      return;
-    }
+    if (!db) return;
     const originalSchedule = JSON.parse(JSON.stringify(schedule));
     const dayRef = doc(db, 'schedule', day);
     const dayData = schedule.find(d => d.day === day);
@@ -205,6 +222,23 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
         setSchedule(originalSchedule);
     }
   };
+
+  if (checkingAuth || !user) {
+    return (
+      <div className="min-h-screen bg-background">
+        <header className="p-4 md:p-6 flex justify-between items-center border-b sticky top-0 bg-background/80 backdrop-blur-sm z-10">
+          <Skeleton className="h-7 w-32" />
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-10 w-24" />
+            <Skeleton className="h-10 w-10" />
+          </div>
+        </header>
+        <main className="p-4 md:p-6 lg:p-8">
+          <AgendaViewLoader />
+        </main>
+      </div>
+    );
+  }
 
   const renderSlot = (slot: Slot) => {
     if (user.role === 'owner') {
@@ -236,7 +270,6 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
       );
     }
 
-    // Client View
     const isBookedByUser = slot.bookedBy.includes(user.name);
     return (
         <Popover key={slot.id}>
@@ -307,6 +340,9 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
             </div>
           )}
           <ThemeToggle />
+          <Button variant="ghost" size="icon" onClick={handleLogout} aria-label="Logout">
+            <LogOut className="h-4 w-4" />
+          </Button>
         </div>
       </header>
 
