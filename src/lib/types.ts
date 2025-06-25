@@ -3,7 +3,7 @@ export type DayOfWeek = 'Lunedì' | 'Martedì' | 'Mercoledì' | 'Giovedì' | 'Ve
 export interface Slot {
   id: string;
   timeRange: string;
-  bookedBy: string | null;
+  bookedBy: string[];
   createdBy?: string;
 }
 

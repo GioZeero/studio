@@ -82,10 +82,20 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
           await batch.commit();
           setSchedule(initialScheduleData);
         } else {
-          const scheduleData = scheduleSnapshot.docs.map(doc => ({
-            day: doc.id as DayOfWeek,
-            ...(doc.data() as Omit<DaySchedule, 'day'>),
-          }));
+          const scheduleData = scheduleSnapshot.docs.map(docSnapshot => {
+            const data = docSnapshot.data();
+            const transformSlot = (slot: any): Slot => ({
+              ...slot,
+              bookedBy: Array.isArray(slot.bookedBy) ? slot.bookedBy : (slot.bookedBy ? [String(slot.bookedBy)] : []),
+            });
+
+            return {
+              day: docSnapshot.id as DayOfWeek,
+              morning: (data.morning || []).map(transformSlot),
+              afternoon: (data.afternoon || []).map(transformSlot),
+              isOpen: data.isOpen || false,
+            };
+          });
           
           const dayOrder: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
           scheduleData.sort((a, b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day));
@@ -112,7 +122,7 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
     const dayData = schedule.find(d => d.day === day);
     if (!dayData) return;
 
-    const newSlot: Slot = { id: `${day}-${period}-${Date.now()}`, timeRange, bookedBy: null, createdBy: user.name };
+    const newSlot: Slot = { id: `${day}-${period}-${Date.now()}`, timeRange, bookedBy: [], createdBy: user.name };
     const updatedPeriodSlots = [...dayData[period], newSlot].sort((a,b) => a.timeRange.localeCompare(b.timeRange));
     
     const updatedDay = { ...dayData, [period]: updatedPeriodSlots, isOpen: true };
@@ -140,7 +150,22 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
     const dayData = schedule.find(d => d.day === dayOfWeek);
     if (!dayData) return;
 
-    const updateSlots = (slots: Slot[]) => slots.map(s => s.id === slotToBook.id ? { ...s, bookedBy: user.name } : s);
+    const updateSlots = (slots: Slot[]) => {
+      return slots.map(s => {
+        if (s.id === slotToBook.id) {
+          const isBooked = s.bookedBy.includes(user.name);
+          if (isBooked) {
+            // Unbook
+            return { ...s, bookedBy: s.bookedBy.filter(name => name !== user.name) };
+          } else {
+            // Book
+            return { ...s, bookedBy: [...s.bookedBy, user.name].sort() };
+          }
+        }
+        return s;
+      });
+    };
+
     const updatedMorning = updateSlots(dayData.morning);
     const updatedAfternoon = updateSlots(dayData.afternoon);
     
@@ -186,15 +211,25 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
       return (
         <Popover key={slot.id}>
           <PopoverTrigger asChild>
-            <Badge variant={slot.bookedBy ? "secondary" : "default"} className="p-2 text-sm cursor-pointer select-none">
-              {slot.timeRange} {slot.bookedBy && `(Prenotato)`}
+            <Badge variant={slot.bookedBy.length > 0 ? "secondary" : "default"} className="p-2 text-sm cursor-pointer select-none">
+              {slot.timeRange} {slot.bookedBy.length > 0 && `(${slot.bookedBy.length})`}
             </Badge>
           </PopoverTrigger>
           <PopoverContent className="w-auto">
             <div className="grid gap-2 text-sm">
               <p><strong className="font-medium">Orario:</strong> {slot.timeRange}</p>
               {slot.createdBy && <p><strong className="font-medium">Creato da:</strong> {slot.createdBy}</p>}
-              <p><strong className="font-medium">Stato:</strong> {slot.bookedBy ? `Prenotato da ${slot.bookedBy}` : 'Libero'}</p>
+              <p><strong className="font-medium">Stato:</strong> {slot.bookedBy.length > 0 ? `Prenotato (${slot.bookedBy.length})` : 'Libero'}</p>
+              {slot.bookedBy.length > 0 && (
+                <div className="text-sm">
+                  <p className="font-semibold">Persone prenotate:</p>
+                  <div className="max-h-24 overflow-y-auto pr-2">
+                    <ul className="list-disc list-inside">
+                      {slot.bookedBy.map((name, index) => <li key={index}>{name}</li>)}
+                    </ul>
+                  </div>
+                </div>
+              )}
             </div>
           </PopoverContent>
         </Popover>
@@ -202,49 +237,42 @@ export default function AgendaView({ user }: { user: { role: 'owner' | 'client';
     }
 
     // Client View
-    if (slot.bookedBy) {
-      return (
+    const isBookedByUser = slot.bookedBy.includes(user.name);
+    return (
         <Popover key={slot.id}>
-          <PopoverTrigger asChild>
-            <Button variant="secondary" disabled className="flex-grow transition-all duration-300">
-              <Clock className="mr-2 h-4 w-4" />
-              {slot.timeRange}
-              <span className="ml-2 font-normal opacity-80">- Prenotato da {slot.bookedBy === user.name ? 'te' : slot.bookedBy}</span>
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto">
-            <div className="grid gap-2 text-sm">
-                <p><strong className="font-medium">Orario:</strong> {slot.timeRange}</p>
-                {slot.createdBy && <p><strong className="font-medium">Creato da:</strong> {slot.createdBy}</p>}
-                <p><strong className="font-medium">Prenotato da:</strong> {slot.bookedBy}</p>
-            </div>
-          </PopoverContent>
+            <PopoverTrigger asChild>
+                <Button variant={isBookedByUser ? "secondary" : "default"} className="flex-grow transition-all duration-300">
+                    <Clock className="mr-2 h-4 w-4" />
+                    {slot.timeRange}
+                    {slot.bookedBy.length > 0 && <Badge variant="outline" className="ml-2">{slot.bookedBy.length}</Badge>}
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-4">
+                <div className="space-y-4">
+                    <div className="text-center">
+                        <p className="font-semibold">{isBookedByUser ? 'Sei già prenotato/a' : 'Conferma prenotazione'}</p>
+                        <div className="text-sm text-muted-foreground">
+                            <p>Orario: {slot.timeRange}</p>
+                            {slot.createdBy && <p>Creato da: {slot.createdBy}</p>}
+                        </div>
+                    </div>
+
+                    {slot.bookedBy.length > 0 && (
+                        <div className="text-sm text-center">
+                            <p className="font-semibold">Persone prenotate ({slot.bookedBy.length}):</p>
+                            <div className="text-muted-foreground max-h-20 overflow-y-auto">
+                                {slot.bookedBy.map((name, i) => <div key={i}>{name}{name === user.name && ' (Tu)'}</div>)}
+                            </div>
+                        </div>
+                    )}
+
+                    <Button onClick={() => handleBookSlot(slot)} className="w-full" size="sm">
+                        {isBookedByUser ? 'Cancella prenotazione' : 'Prenota ora'}
+                    </Button>
+                </div>
+            </PopoverContent>
         </Popover>
-      );
-    } else {
-      return (
-        <Popover key={slot.id}>
-          <PopoverTrigger asChild>
-            <Button variant="default" className="flex-grow transition-all duration-300">
-              <Clock className="mr-2 h-4 w-4" />
-              {slot.timeRange}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-4">
-              <div className="space-y-2 text-center">
-                  <p className="font-semibold">Conferma prenotazione</p>
-                  <div className="text-sm text-muted-foreground">
-                      <p>Orario: {slot.timeRange}</p>
-                      {slot.createdBy && <p>Creato da: {slot.createdBy}</p>}
-                  </div>
-                  <Button onClick={() => handleBookSlot(slot)} className="w-full mt-2" size="sm">
-                      Prenota ora
-                  </Button>
-              </div>
-          </PopoverContent>
-        </Popover>
-      );
-    }
+    );
   };
 
   return (

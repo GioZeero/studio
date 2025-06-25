@@ -55,7 +55,7 @@ export function DeleteSlotModal({ isOpen, onOpenChange, schedule, onDeleteSlot }
                             <div className="space-y-2">
                               {daySchedule.morning.map(slot => (
                                 <div key={slot.id} className="flex items-center justify-between p-2 rounded-md bg-muted/50">
-                                  <Badge variant={slot.bookedBy ? "secondary" : "default"}>{slot.timeRange} {slot.bookedBy && `(Prenotato)`}</Badge>
+                                  <Badge variant={slot.bookedBy.length > 0 ? "secondary" : "default"}>{slot.timeRange} {slot.bookedBy.length > 0 && `(${slot.bookedBy.length})`}</Badge>
                                   <Button variant="ghost" size="icon" onClick={() => handleDelete(daySchedule.day, 'morning', slot.id)}>
                                     <Trash2 className="h-4 w-4 text-destructive" />
                                   </Button>
@@ -70,7 +70,7 @@ export function DeleteSlotModal({ isOpen, onOpenChange, schedule, onDeleteSlot }
                              <div className="space-y-2">
                               {daySchedule.afternoon.map(slot => (
                                 <div key={slot.id} className="flex items-center justify-between p-2 rounded-md bg-muted/50">
-                                  <Badge variant={slot.bookedBy ? "secondary" : "default"}>{slot.timeRange} {slot.bookedBy && `(Prenotato)`}</Badge>
+                                  <Badge variant={slot.bookedBy.length > 0 ? "secondary" : "default"}>{slot.timeRange} {slot.bookedBy.length > 0 && `(${slot.bookedBy.length})`}</Badge>
                                    <Button variant="ghost" size="icon" onClick={() => handleDelete(daySchedule.day, 'afternoon', slot.id)}>
                                     <Trash2 className="h-4 w-4 text-destructive" />
                                   </Button>
