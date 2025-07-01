@@ -26,6 +26,18 @@ const initialScheduleData: DaySchedule[] = [
   { day: 'Domenica', morning: [], afternoon: [], isOpen: false },
 ];
 
+const sendNotification = async (payload: { targetRole: 'owner' | 'client', title: string, body: string }) => {
+    try {
+        await fetch('/api/notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+    } catch (error) {
+        console.error("Failed to send notification:", error);
+    }
+};
+
 function AgendaViewLoader() {
   return (
     <div className="space-y-6">
@@ -154,6 +166,11 @@ export default function AgendaView() {
 
     try {
         await updateDoc(dayRef, { [period]: updatedPeriodSlots, isOpen: true });
+        await sendNotification({
+            targetRole: 'client',
+            title: 'Nuovi orari disponibili!',
+            body: `È stato aggiunto un nuovo orario per ${day}: ${timeRange}`,
+        });
     } catch (error) {
         console.error("Error adding slot: ", error);
         setSchedule(originalSchedule);
@@ -170,6 +187,8 @@ export default function AgendaView() {
     const dayRef = doc(db, 'schedule', dayOfWeek);
     const dayData = schedule.find(d => d.day === dayOfWeek);
     if (!dayData) return;
+
+    const isBooking = !slotToBook.bookedBy.includes(user.name);
 
     const updateSlots = (slots: Slot[]) => {
       return slots.map(s => {
@@ -192,6 +211,13 @@ export default function AgendaView() {
 
     try {
         await updateDoc(dayRef, { morning: updatedMorning, afternoon: updatedAfternoon });
+        if (isBooking) {
+            await sendNotification({
+                targetRole: 'owner',
+                title: 'Nuova prenotazione!',
+                body: `${user.name} si è prenotato per ${slotToBook.timeRange} il giorno ${dayOfWeek}.`,
+            });
+        }
     } catch (error) {
         console.error("Error booking slot: ", error);
         setSchedule(originalSchedule);

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Dumbbell } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { requestNotificationPermission } from '@/lib/firebase-client';
 
 export default function Home() {
   const [role, setRole] = useState<'owner' | 'client'>('client');
@@ -25,11 +26,27 @@ export default function Home() {
     }
   }, [router]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const subscribeToNotifications = async (user: { name: string; role: string }) => {
+    const token = await requestNotificationPermission();
+    if (token) {
+        try {
+            await fetch('/api/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...user, token }),
+            });
+        } catch (error) {
+            console.error("Failed to subscribe user:", error);
+        }
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
       const user = { role, name: name.trim() };
       localStorage.setItem('gymUser', JSON.stringify(user));
+      await subscribeToNotifications(user);
       router.push(`/agenda`);
     }
   };
