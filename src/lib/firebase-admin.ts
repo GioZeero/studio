@@ -1,4 +1,3 @@
-'use server';
 import admin from 'firebase-admin';
 
 // This check prevents re-initialization in a hot-reload environment
