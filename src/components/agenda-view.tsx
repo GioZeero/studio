@@ -15,6 +15,7 @@ import { db } from '@/lib/firebase';
 import { Skeleton } from './ui/skeleton';
 import { ThemeToggle } from './theme-toggle';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 
 const initialScheduleData: DaySchedule[] = [
   { day: 'Lunedì', morning: [], afternoon: [], isOpen: false },
@@ -64,7 +65,15 @@ export default function AgendaView() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [modalPeriod, setModalPeriod] = useState<'morning' | 'afternoon'>('morning');
   const [bookingSlotId, setBookingSlotId] = useState<string | null>(null);
+  const [currentDay, setCurrentDay] = useState<DayOfWeek | null>(null);
   const router = useRouter();
+  
+  useEffect(() => {
+    // This effect runs only on the client to avoid hydration mismatch
+    const dayNames: DayOfWeek[] = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
+    const todayIndex = new Date().getDay();
+    setCurrentDay(dayNames[todayIndex]);
+  }, []);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('gymUser');
@@ -421,7 +430,14 @@ export default function AgendaView() {
               if (user.role === 'client' && !hasSlots) return null;
 
               return (
-                <Card key={daySchedule.day} className={`transition-all ${!hasSlots ? 'opacity-60 bg-muted/30' : 'shadow-lg border-primary/20'}`}>
+                <Card 
+                  key={daySchedule.day} 
+                  className={cn('transition-all duration-300', {
+                    'border-2 border-accent shadow-xl shadow-accent/20': daySchedule.day === currentDay,
+                    'opacity-60 bg-muted/30': daySchedule.day !== currentDay && !hasSlots,
+                    'shadow-lg border-primary/20': daySchedule.day !== currentDay && hasSlots,
+                  })}
+                >
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-2xl font-headline">
                       <Calendar className="h-6 w-6 text-primary" />
