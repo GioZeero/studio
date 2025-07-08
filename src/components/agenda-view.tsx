@@ -413,9 +413,12 @@ export default function AgendaView() {
       return (
         <Popover key={slot.id}>
           <PopoverTrigger asChild>
-            <Badge variant={slot.bookedBy.length > 0 ? "secondary" : "default"} className="p-2 text-sm cursor-pointer select-none">
-              {slot.timeRange} {slot.bookedBy.length > 0 && `(${slot.bookedBy.length})`}
-            </Badge>
+            <div className="group relative flex-grow cursor-pointer rounded-md border p-2 transition-colors hover:bg-muted min-w-[120px] text-left">
+              <p className="font-medium text-sm">{slot.timeRange}</p>
+              <p className="text-xs text-muted-foreground">
+                {slot.bookedBy.length > 0 ? `${slot.bookedBy.length} prenotati` : 'Libero'}
+              </p>
+            </div>
           </PopoverTrigger>
           <PopoverContent className="w-auto">
             <div className="grid gap-2 text-sm">
@@ -444,19 +447,25 @@ export default function AgendaView() {
     return (
         <Popover key={slot.id}>
             <PopoverTrigger asChild>
-                <Button 
-                    variant={isBookedByUser ? "secondary" : "default"} 
-                    className="flex-grow transition-all duration-300"
+                <button
                     disabled={isLoading}
-                >
-                    {isLoading ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                        <Clock className="mr-2 h-4 w-4" />
+                    className={cn(
+                        "relative flex min-w-[120px] flex-grow flex-col items-start rounded-md border p-2 text-left transition-all disabled:opacity-50",
+                        isBookedByUser 
+                            ? "border-primary bg-primary/10" 
+                            : "border-border bg-transparent hover:bg-accent/50",
+                        isLoading && "animate-pulse"
                     )}
-                    {slot.timeRange}
-                    {slot.bookedBy.length > 0 && !isLoading && <Badge variant="outline" className="ml-2">{slot.bookedBy.length}</Badge>}
-                </Button>
+                >
+                    {isLoading && <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="h-4 w-4 animate-spin"/></div>}
+                    <p className="font-medium text-sm">{slot.timeRange}</p>
+                    <p className="text-xs text-muted-foreground">
+                    {slot.bookedBy.length} prenotati
+                    </p>
+                    {isBookedByUser && !isLoading && (
+                    <div className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary" />
+                    )}
+                </button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-4">
                 <div className="space-y-4">
@@ -593,7 +602,7 @@ export default function AgendaView() {
       </header>
 
       <main className="p-4 md:p-6 lg:p-8">
-        <div className="mb-4">
+        <div className="mb-2">
             <h2 className="text-sm font-semibold text-muted-foreground tracking-wider">{dateRange}</h2>
         </div>
         { loading ? <AgendaViewLoader /> : (
