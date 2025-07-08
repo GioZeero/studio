@@ -413,28 +413,31 @@ export default function AgendaView() {
       return (
         <Popover key={slot.id}>
           <PopoverTrigger asChild>
-            <div className="group relative flex-grow cursor-pointer rounded-md border p-2 transition-colors hover:bg-muted min-w-[120px] text-left">
-              <p className="font-medium text-sm">{slot.timeRange}</p>
+            <button
+              className={cn(
+                'group relative flex h-auto min-w-[120px] flex-grow flex-col items-start rounded-md border p-2 text-left transition-colors',
+                slot.bookedBy.length > 0 ? 'bg-muted/50' : 'bg-transparent',
+                'hover:bg-accent/50'
+              )}
+            >
+              <p className="font-semibold text-sm">{slot.timeRange}</p>
               <p className="text-xs text-muted-foreground">
                 {slot.bookedBy.length > 0 ? `${slot.bookedBy.length} prenotati` : 'Libero'}
               </p>
-            </div>
+            </button>
           </PopoverTrigger>
-          <PopoverContent className="w-auto">
-            <div className="grid gap-2 text-sm">
-              <p><strong className="font-medium">Orario:</strong> {slot.timeRange}</p>
-              {slot.createdBy && <p><strong className="font-medium">Creato da:</strong> {slot.createdBy}</p>}
-              <p><strong className="font-medium">Stato:</strong> {slot.bookedBy.length > 0 ? `Prenotato (${slot.bookedBy.length})` : 'Libero'}</p>
-              {slot.bookedBy.length > 0 && (
-                <div className="text-sm">
-                  <p className="font-semibold">Persone prenotate:</p>
-                  <div className="max-h-24 overflow-y-auto pr-2">
-                    <ul className="list-disc list-inside">
-                      {slot.bookedBy.map((name, index) => <li key={index}>{name}</li>)}
-                    </ul>
-                  </div>
-                </div>
-              )}
+          <PopoverContent className="w-auto p-4">
+            <div className="space-y-2 text-sm">
+                <p className="font-semibold text-base mb-2">Persone presenti</p>
+                {slot.bookedBy.length > 0 ? (
+                    <div className="max-h-32 overflow-y-auto pr-2">
+                        <ul className="list-disc list-inside space-y-1.5">
+                            {slot.bookedBy.map((name, index) => <li key={index}>{name}</li>)}
+                        </ul>
+                    </div>
+                ) : (
+                    <p className="text-muted-foreground">Nessuna persona prenotata.</p>
+                )}
             </div>
           </PopoverContent>
         </Popover>
@@ -450,7 +453,7 @@ export default function AgendaView() {
                 <button
                     disabled={isLoading}
                     className={cn(
-                        "relative flex min-w-[120px] flex-grow flex-col items-start rounded-md border p-2 text-left transition-all disabled:opacity-50",
+                        "group relative flex h-auto min-w-[120px] flex-grow flex-col items-start rounded-md border p-2 text-left transition-all disabled:opacity-50",
                         isBookedByUser 
                             ? "border-primary bg-primary/10" 
                             : "border-border bg-transparent hover:bg-accent/50",
@@ -458,12 +461,12 @@ export default function AgendaView() {
                     )}
                 >
                     {isLoading && <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="h-4 w-4 animate-spin"/></div>}
-                    <p className="font-medium text-sm">{slot.timeRange}</p>
+                    <p className="font-semibold text-sm">{slot.timeRange}</p>
                     <p className="text-xs text-muted-foreground">
-                    {slot.bookedBy.length} prenotati
+                      {slot.bookedBy.length} prenotati
                     </p>
                     {isBookedByUser && !isLoading && (
-                    <div className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary" />
+                      <div className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary" />
                     )}
                 </button>
             </PopoverTrigger>
