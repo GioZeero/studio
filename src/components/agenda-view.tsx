@@ -10,7 +10,7 @@ import { AddSlotModal } from './add-slot-modal';
 import { DeleteSlotModal, type SlotToDelete } from './delete-slot-modal';
 import type { DayOfWeek, DaySchedule, Slot, User as AppUser } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
-import { collection, doc, onSnapshot, writeBatch, runTransaction, getDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, writeBatch, runTransaction, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Skeleton } from './ui/skeleton';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -133,9 +133,17 @@ export default function AgendaView() {
           }
         }
       } else {
-        console.error("User not found in Firestore, but present in localStorage.");
-        localStorage.removeItem('gymUser');
-        router.replace('/');
+        // Self-heal: User is in localStorage but not Firestore. Re-create them.
+        try {
+          console.warn(`User '${name}' found in localStorage but not in Firestore. Re-creating user.`);
+          const newUser: Omit<AppUser, 'id'> = { name, role };
+          await setDoc(userRef, newUser);
+          setUser(newUser as AppUser);
+        } catch (e) {
+          console.error("Failed to re-create user in Firestore. Logging out.", e);
+          localStorage.removeItem('gymUser');
+          router.replace('/');
+        }
       }
       setCheckingAuth(false);
     };
