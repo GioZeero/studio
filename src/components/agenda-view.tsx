@@ -10,7 +10,7 @@ import { AddSlotModal } from './add-slot-modal';
 import { DeleteSlotModal, type SlotToDelete } from './delete-slot-modal';
 import type { DayOfWeek, DaySchedule, Slot } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
-import { collection, doc, onSnapshot, writeBatch, runTransaction } from 'firebase/firestore';
+import { collection, doc, onSnapshot, writeBatch, runTransaction, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Skeleton } from './ui/skeleton';
 import { ThemeToggle } from './theme-toggle';
@@ -66,13 +66,32 @@ export default function AgendaView() {
   const [modalPeriod, setModalPeriod] = useState<'morning' | 'afternoon'>('morning');
   const [bookingSlotId, setBookingSlotId] = useState<string | null>(null);
   const [currentDay, setCurrentDay] = useState<DayOfWeek | null>(null);
+  const [dateRange, setDateRange] = useState('');
   const router = useRouter();
   
   useEffect(() => {
-    // This effect runs only on the client to avoid hydration mismatch
     const dayNames: DayOfWeek[] = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
     const todayIndex = new Date().getDay();
     setCurrentDay(dayNames[todayIndex]);
+    
+    const getWeekRange = () => {
+        const now = new Date();
+        const dayOfWeek = now.getDay();
+        const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + diffToMonday);
+
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+
+        const options: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'long' };
+        const mondayFormatted = monday.toLocaleDateString('it-IT', options);
+        const sundayFormatted = sunday.toLocaleDateString('it-IT', options);
+
+        return `Settimana dal ${mondayFormatted} al ${sundayFormatted}`;
+    };
+    setDateRange(getWeekRange());
   }, []);
 
   useEffect(() => {
@@ -93,59 +112,102 @@ export default function AgendaView() {
   useEffect(() => {
     if (!user) return;
 
-    if (!db) {
-        console.warn("Il database Firestore non è disponibile.");
-        setSchedule(initialScheduleData);
-        setLoading(false);
-        return;
-    }
+    const checkAndPerformWeeklyReset = async () => {
+        if (!db) return;
+        
+        const metadataRef = doc(db, 'metadata', 'scheduleReset');
+        
+        try {
+            const metadataSnap = await getDoc(metadataRef);
+            const lastReset = metadataSnap.exists() ? metadataSnap.data().lastReset.toDate() : null;
 
-    setLoading(true);
-    const scheduleCol = collection(db, 'schedule');
-    
-    const unsubscribe = onSnapshot(scheduleCol, (querySnapshot) => {
-        if (querySnapshot.empty) {
-          const setupInitialSchedule = async () => {
-            if (!db) return;
-            const batch = writeBatch(db);
-            initialScheduleData.forEach(daySchedule => {
-              const { day, ...dataToSet } = daySchedule;
-              const dayRef = doc(db, 'schedule', day);
-              batch.set(dayRef, dataToSet);
-            });
-            await batch.commit();
-          };
-          setupInitialSchedule();
-          setSchedule(initialScheduleData);
-        } else {
-          const scheduleData = querySnapshot.docs.map(docSnapshot => {
-            const data = docSnapshot.data();
-            const transformSlot = (slot: any): Slot => ({
-              ...slot,
-              bookedBy: Array.isArray(slot.bookedBy) ? slot.bookedBy : [],
-            });
+            const now = new Date();
+            const lastSundayAt23 = new Date(now);
+            lastSundayAt23.setDate(now.getDate() - now.getDay());
+            lastSundayAt23.setHours(23, 0, 0, 0);
 
-            return {
-              day: docSnapshot.id as DayOfWeek,
-              morning: (data.morning || []).map(transformSlot),
-              afternoon: (data.afternoon || []).map(transformSlot),
-              isOpen: data.isOpen || false,
-            };
-          });
-          
-          const dayOrder: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
-          scheduleData.sort((a, b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day));
-          
-          setSchedule(scheduleData as DaySchedule[]);
+            if (now < lastSundayAt23) {
+                lastSundayAt23.setDate(lastSundayAt23.getDate() - 7);
+            }
+            
+            if (!lastReset || lastReset < lastSundayAt23) {
+                console.log('Performing weekly schedule reset...');
+                
+                const batch = writeBatch(db);
+                const days: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+                
+                // Assuming all day documents exist, otherwise we'd need to check
+                days.forEach(day => {
+                    const dayRef = doc(db, 'schedule', day);
+                    batch.update(dayRef, { morning: [], afternoon: [], isOpen: false });
+                });
+
+                batch.set(metadataRef, { lastReset: new Date() });
+
+                await batch.commit();
+                console.log('Weekly reset successful.');
+            }
+        } catch (error) {
+            console.error("Error during weekly reset check:", error);
         }
-        setLoading(false);
-    }, (error) => {
-        console.error("Errore con il listener in tempo reale della pianificazione: ", error);
-        setSchedule(initialScheduleData);
-        setLoading(false);
+    };
+    
+    setLoading(true);
+    checkAndPerformWeeklyReset().finally(() => {
+        if (!db) {
+            console.warn("Il database Firestore non è disponibile.");
+            setSchedule(initialScheduleData);
+            setLoading(false);
+            return;
+        }
+
+        const scheduleCol = collection(db, 'schedule');
+        
+        const unsubscribe = onSnapshot(scheduleCol, (querySnapshot) => {
+            if (querySnapshot.empty) {
+              const setupInitialSchedule = async () => {
+                if (!db) return;
+                const batch = writeBatch(db);
+                initialScheduleData.forEach(daySchedule => {
+                  const { day, ...dataToSet } = daySchedule;
+                  const dayRef = doc(db, 'schedule', day);
+                  batch.set(dayRef, dataToSet);
+                });
+                await batch.commit();
+              };
+              setupInitialSchedule();
+              setSchedule(initialScheduleData);
+            } else {
+              const scheduleData = querySnapshot.docs.map(docSnapshot => {
+                const data = docSnapshot.data();
+                const transformSlot = (slot: any): Slot => ({
+                  ...slot,
+                  bookedBy: Array.isArray(slot.bookedBy) ? slot.bookedBy : [],
+                });
+
+                return {
+                  day: docSnapshot.id as DayOfWeek,
+                  morning: (data.morning || []).map(transformSlot),
+                  afternoon: (data.afternoon || []).map(transformSlot),
+                  isOpen: data.isOpen || false,
+                };
+              });
+              
+              const dayOrder: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+              scheduleData.sort((a, b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day));
+              
+              setSchedule(scheduleData as DaySchedule[]);
+            }
+            setLoading(false);
+        }, (error) => {
+            console.error("Errore con il listener in tempo reale della pianificazione: ", error);
+            setSchedule(initialScheduleData);
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
     });
 
-    return () => unsubscribe();
   }, [user]);
 
   const handleLogout = () => {
@@ -423,6 +485,9 @@ export default function AgendaView() {
       </header>
 
       <main className="p-4 md:p-6 lg:p-8">
+        <div className="mb-8 text-center">
+            <h2 className="text-xl font-semibold text-muted-foreground tracking-wider">{dateRange}</h2>
+        </div>
         { loading ? <AgendaViewLoader /> : (
           <div className="space-y-6">
             {schedule.map(daySchedule => {
