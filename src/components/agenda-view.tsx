@@ -3,20 +3,25 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Calendar, Clock, Plus, User, Trash2, Sun, Moon, LogOut, Loader2 } from 'lucide-react';
+import { Calendar, Clock, Plus, User, Trash2, Sun, Moon, LogOut, Loader2, List, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AddSlotModal } from './add-slot-modal';
 import { DeleteSlotModal, type SlotToDelete } from './delete-slot-modal';
-import type { DayOfWeek, DaySchedule, Slot } from '@/lib/types';
+import type { DayOfWeek, DaySchedule, Slot, User as AppUser } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
-import { collection, doc, onSnapshot, writeBatch, runTransaction } from 'firebase/firestore';
+import { collection, doc, onSnapshot, writeBatch, runTransaction, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Skeleton } from './ui/skeleton';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuPortal, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { ExpiryReminderModal } from './expiry-reminder-modal';
+import { SubscriptionModal } from './subscription-modal';
+import { ClientListModal } from './client-list-modal';
+import { isPast } from 'date-fns';
+import { useToast } from '@/hooks/use-toast';
 
 const initialScheduleData: DaySchedule[] = [
   { day: 'Lunedì', morning: [], afternoon: [], isOpen: false },
@@ -58,18 +63,24 @@ function AgendaViewLoader() {
 }
 
 export default function AgendaView() {
-  const [user, setUser] = useState<{ role: 'owner' | 'client'; name: string } | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [schedule, setSchedule] = useState<DaySchedule[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  const [isAddSlotModalOpen, setAddSlotModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isSubscriptionModalOpen, setSubscriptionModalOpen] = useState(false);
+  const [isClientListModalOpen, setClientListModalOpen] = useState(false);
+  const [isExpiryReminderOpen, setExpiryReminderOpen] = useState(false);
+
   const [modalPeriod, setModalPeriod] = useState<'morning' | 'afternoon'>('morning');
   const [bookingSlotId, setBookingSlotId] = useState<string | null>(null);
   const [currentDay, setCurrentDay] = useState<DayOfWeek | null>(null);
   const [dateRange, setDateRange] = useState('');
   const router = useRouter();
   const { setTheme } = useTheme();
+  const { toast } = useToast();
   
   useEffect(() => {
     const dayNames: DayOfWeek[] = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
@@ -98,17 +109,44 @@ export default function AgendaView() {
 
   useEffect(() => {
     const storedUser = localStorage.getItem('gymUser');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (e) {
+    if (!storedUser) {
+      router.replace('/');
+      return;
+    }
+
+    const fetchUserData = async (name: string, role: 'owner' | 'client') => {
+      if (!db) {
+        setUser({ name, role });
+        setCheckingAuth(false);
+        return;
+      }
+      const userRef = doc(db, 'users', name);
+      const userSnap = await getDoc(userRef);
+
+      if (userSnap.exists()) {
+        const userData = userSnap.data() as AppUser;
+        setUser(userData);
+        if (userData.role === 'client') {
+          const isExpired = !userData.subscriptionExpiry || isPast(new Date(userData.subscriptionExpiry));
+          if (isExpired) {
+            setExpiryReminderOpen(true);
+          }
+        }
+      } else {
+        console.error("User not found in Firestore, but present in localStorage.");
         localStorage.removeItem('gymUser');
         router.replace('/');
       }
-    } else {
+      setCheckingAuth(false);
+    };
+
+    try {
+      const { name, role } = JSON.parse(storedUser);
+      fetchUserData(name, role);
+    } catch (e) {
+      localStorage.removeItem('gymUser');
       router.replace('/');
     }
-    setCheckingAuth(false);
   }, [router]);
 
   useEffect(() => {
@@ -208,6 +246,12 @@ export default function AgendaView() {
     router.push('/');
   };
 
+  const handleSubscriptionUpdate = (newExpiry: string) => {
+    if (user) {
+      setUser({ ...user, subscriptionExpiry: newExpiry });
+    }
+  };
+
   const handleAddSlot = async (day: DayOfWeek, period: 'morning' | 'afternoon', timeRange: string) => {
     if (!db || !user) return;
     const dayRef = doc(db, 'schedule', day);
@@ -235,6 +279,19 @@ export default function AgendaView() {
 
   const handleBookSlot = async (slotToBook: Slot) => {
     if (!db || !user || bookingSlotId === slotToBook.id) return;
+    
+    if (user.role === 'client') {
+      const isExpired = !user.subscriptionExpiry || isPast(new Date(user.subscriptionExpiry));
+      if (isExpired) {
+        setExpiryReminderOpen(true);
+        toast({
+          variant: "destructive",
+          title: "Abbonamento Scaduto",
+          description: "Per favore, rinnova il tuo abbonamento per prenotare.",
+        });
+        return;
+      }
+    }
 
     setBookingSlotId(slotToBook.id);
 
@@ -441,10 +498,21 @@ export default function AgendaView() {
 
   return (
     <div className="min-h-screen bg-background text-foreground font-body">
-      {user.role === 'owner' && (
+      {user && (
         <>
-          <AddSlotModal isOpen={isModalOpen} onOpenChange={setIsModalOpen} onAddSlot={handleAddSlot} period={modalPeriod} onPeriodChange={setModalPeriod} />
-          <DeleteSlotModal isOpen={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen} schedule={schedule} onDeleteSlots={handleDeleteSlots} />
+            {user.role === 'owner' && (
+                <>
+                    <AddSlotModal isOpen={isAddSlotModalOpen} onOpenChange={setAddSlotModalOpen} onAddSlot={handleAddSlot} period={modalPeriod} onPeriodChange={setModalPeriod} />
+                    <DeleteSlotModal isOpen={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen} schedule={schedule} onDeleteSlots={handleDeleteSlots} />
+                    <ClientListModal isOpen={isClientListModalOpen} onOpenChange={setClientListModalOpen} />
+                </>
+            )}
+            {user.role === 'client' && (
+                <>
+                    <ExpiryReminderModal isOpen={isExpiryReminderOpen} onOpenChange={setExpiryReminderOpen} user={user} onSubscriptionUpdate={handleSubscriptionUpdate} />
+                    <SubscriptionModal isOpen={isSubscriptionModalOpen} onOpenChange={setSubscriptionModalOpen} user={user} onSubscriptionUpdate={handleSubscriptionUpdate} />
+                </>
+            )}
         </>
       )}
       
@@ -456,7 +524,7 @@ export default function AgendaView() {
         <div className="flex items-center gap-2 md:gap-4">
           {user.role === 'owner' && (
             <>
-              <Button onClick={() => setIsModalOpen(true)}>
+              <Button onClick={() => setAddSlotModalOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" /> Aggiungi Orari
               </Button>
               <Button variant="destructive" size="icon" aria-label="Cancella orario" onClick={() => setIsDeleteModalOpen(true)}>
@@ -489,6 +557,20 @@ export default function AgendaView() {
             <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>Il Mio Account</DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                
+                {user.role === 'client' && (
+                    <DropdownMenuItem onClick={() => setSubscriptionModalOpen(true)}>
+                        <FileText className="mr-2 h-4 w-4" />
+                        <span>Abbonamento</span>
+                    </DropdownMenuItem>
+                )}
+                {user.role === 'owner' && (
+                    <DropdownMenuItem onClick={() => setClientListModalOpen(true)}>
+                        <List className="mr-2 h-4 w-4" />
+                        <span>Clienti e Banca</span>
+                    </DropdownMenuItem>
+                )}
+                
                 <DropdownMenuSub>
                     <DropdownMenuSubTrigger>
                         <Sun className="mr-2 h-4 w-4" />

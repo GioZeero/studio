@@ -13,3 +13,13 @@ export interface DaySchedule {
   afternoon: Slot[];
   isOpen: boolean;
 }
+
+export interface User {
+  name: string;
+  role: 'owner' | 'client';
+  subscriptionExpiry?: string; 
+}
+
+export interface ClientData extends User {
+  id: string;
+}

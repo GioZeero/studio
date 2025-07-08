@@ -7,14 +7,21 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Dumbbell } from 'lucide-react';
+import { Dumbbell, Loader2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Checkbox } from '@/components/ui/checkbox';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
 
 export default function Home() {
   const [role, setRole] = useState<'owner' | 'client'>('client');
   const [name, setName] = useState('');
+  const [hasPaid, setHasPaid] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
+  const { toast } = useToast();
 
   useEffect(() => {
     const storedUser = localStorage.getItem('gymUser');
@@ -27,10 +34,62 @@ export default function Home() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (name.trim()) {
-      const user = { role, name: name.trim() };
-      localStorage.setItem('gymUser', JSON.stringify(user));
-      router.push(`/agenda`);
+    if (!name.trim() || !db) return;
+
+    setIsSubmitting(true);
+    const trimmedName = name.trim();
+
+    try {
+      const userRef = doc(db, 'users', trimmedName);
+      const userSnap = await getDoc(userRef);
+
+      if (userSnap.exists()) {
+        const existingUser = userSnap.data();
+        if (existingUser.role !== role) {
+          toast({
+            variant: "destructive",
+            title: "Errore di ruolo",
+            description: `Un utente con questo nome esiste già come ${existingUser.role}.`,
+          });
+          setIsSubmitting(false);
+          return;
+        }
+        localStorage.setItem('gymUser', JSON.stringify({ name: trimmedName, role }));
+        router.push(`/agenda`);
+
+      } else {
+        const newUser: { name: string; role: 'owner' | 'client'; subscriptionExpiry?: string } = {
+          name: trimmedName,
+          role: role,
+        };
+
+        if (role === 'client' && hasPaid) {
+          const expiryDate = new Date();
+          expiryDate.setMonth(expiryDate.getMonth() + 1, 0); 
+          expiryDate.setHours(23, 59, 59, 999);
+          newUser.subscriptionExpiry = expiryDate.toISOString();
+          
+          const bankRef = doc(db, 'bank', 'total');
+          const bankSnap = await getDoc(bankRef);
+          if (!bankSnap.exists()) {
+              await setDoc(bankRef, { amount: 25 });
+          } else {
+              await setDoc(bankRef, { amount: (bankSnap.data().amount || 0) + 25 }, { merge: true });
+          }
+        }
+
+        await setDoc(userRef, newUser);
+        localStorage.setItem('gymUser', JSON.stringify({ name: trimmedName, role }));
+        router.push(`/agenda`);
+      }
+    } catch (error) {
+      console.error("Error during login/registration:", error);
+      toast({
+        variant: "destructive",
+        title: "Errore",
+        description: "Qualcosa è andato storto. Riprova.",
+      });
+      setIsSubmitting(false);
     }
   };
 
@@ -98,7 +157,19 @@ export default function Home() {
                 required
               />
             </div>
-            <Button type="submit" className="w-full" disabled={!name.trim()}>
+            {role === 'client' && (
+              <div className="flex items-center space-x-2">
+                <Checkbox id="paid" checked={hasPaid} onCheckedChange={(checked) => setHasPaid(!!checked)} />
+                <label
+                  htmlFor="paid"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Pagato mese corrente
+                </label>
+              </div>
+            )}
+            <Button type="submit" className="w-full" disabled={!name.trim() || isSubmitting}>
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Continua
             </Button>
           </form>
