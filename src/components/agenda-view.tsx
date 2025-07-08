@@ -593,7 +593,7 @@ export default function AgendaView() {
       </header>
 
       <main className="p-4 md:p-6 lg:p-8">
-        <div className="text-center mb-6">
+        <div className="mb-4">
             <h2 className="text-sm font-semibold text-muted-foreground tracking-wider">{dateRange}</h2>
         </div>
         { loading ? <AgendaViewLoader /> : (
