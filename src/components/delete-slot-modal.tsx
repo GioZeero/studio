@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -35,7 +35,6 @@ interface DeleteSlotModalProps {
 export function DeleteSlotModal({ isOpen, onOpenChange, schedule, onDeleteSlots }: DeleteSlotModalProps) {
   const [selectedSlots, setSelectedSlots] = useState<Map<string, SlotToDelete>>(new Map());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
-  const longPressTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const slotsAvailable = schedule.some(day => day.morning.length > 0 || day.afternoon.length > 0);
 
@@ -61,27 +60,13 @@ export function DeleteSlotModal({ isOpen, onOpenChange, schedule, onDeleteSlots 
     });
   };
 
-  const handleInteractionStart = (slot: Slot, day: DayOfWeek, period: 'morning' | 'afternoon') => {
-    if (longPressTimeout.current) {
-      clearTimeout(longPressTimeout.current);
-    }
-    longPressTimeout.current = setTimeout(() => {
+  const handleSlotClick = (slot: Slot, day: DayOfWeek, period: 'morning' | 'afternoon') => {
+    if (!isSelectionMode) {
       setIsSelectionMode(true);
-      toggleSelection(slot, day, period);
-      longPressTimeout.current = null;
-    }, 500);
-  };
-
-  const handleInteractionEnd = (slot: Slot, day: DayOfWeek, period: 'morning' | 'afternoon') => {
-    if (longPressTimeout.current) {
-      clearTimeout(longPressTimeout.current);
-      longPressTimeout.current = null;
-      if (isSelectionMode) {
-        toggleSelection(slot, day, period);
-      }
     }
+    toggleSelection(slot, day, period);
   };
-
+  
   const handleBulkDelete = () => {
     onDeleteSlots(Array.from(selectedSlots.values()));
     onOpenChange(false);
@@ -94,28 +79,22 @@ export function DeleteSlotModal({ isOpen, onOpenChange, schedule, onDeleteSlots 
       <div
         key={slot.id}
         className={cn(
-          'flex items-center justify-between p-2 rounded-md bg-muted/50 transition-colors',
-          isSelectionMode && 'cursor-pointer hover:bg-muted',
+          'flex items-center justify-between p-2 rounded-md bg-muted/50 transition-colors cursor-pointer hover:bg-muted',
           isSelected && 'bg-primary/20'
         )}
-        onMouseDown={() => handleInteractionStart(slot, day, period)}
-        onMouseUp={() => handleInteractionEnd(slot, day, period)}
-        onTouchStart={() => handleInteractionStart(slot, day, period)}
-        onTouchEnd={() => handleInteractionEnd(slot, day, period)}
-        onMouseLeave={() => { if (longPressTimeout.current) clearTimeout(longPressTimeout.current); }}
+        onClick={() => handleSlotClick(slot, day, period)}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 pointer-events-none">
             {isSelectionMode && (
               <Checkbox
                 checked={isSelected}
-                onCheckedChange={() => toggleSelection(slot, day, period)}
                 id={`cb-${slot.id}`}
                 aria-label={`Seleziona ${slot.timeRange}`}
               />
             )}
             <label
               htmlFor={`cb-${slot.id}`}
-              className={cn(isSelectionMode ? 'cursor-pointer' : 'cursor-default')}
+              className={'cursor-pointer'}
             >
               <Badge variant={slot.bookedBy.length > 0 ? "secondary" : "default"}>
                 {slot.timeRange} {slot.bookedBy.length > 0 && `(${slot.bookedBy.length})`}
@@ -132,7 +111,7 @@ export function DeleteSlotModal({ isOpen, onOpenChange, schedule, onDeleteSlots 
         <DialogHeader>
           <DialogTitle>Cancella Orari</DialogTitle>
           <DialogDescription>
-            Tieni premuto su un orario per iniziare la selezione, poi tocca altri orari per aggiungerli.
+            Clicca su un orario per iniziare la selezione, poi tocca altri orari per aggiungerli.
           </DialogDescription>
         </DialogHeader>
 
