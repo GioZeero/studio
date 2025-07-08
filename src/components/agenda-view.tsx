@@ -13,9 +13,10 @@ import { Badge } from '@/components/ui/badge';
 import { collection, doc, onSnapshot, writeBatch, runTransaction } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Skeleton } from './ui/skeleton';
-import { ThemeToggle } from './theme-toggle';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { useTheme } from 'next-themes';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuPortal, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 const initialScheduleData: DaySchedule[] = [
   { day: 'Lunedì', morning: [], afternoon: [], isOpen: false },
@@ -68,6 +69,7 @@ export default function AgendaView() {
   const [currentDay, setCurrentDay] = useState<DayOfWeek | null>(null);
   const [dateRange, setDateRange] = useState('');
   const router = useRouter();
+  const { setTheme } = useTheme();
   
   useEffect(() => {
     const dayNames: DayOfWeek[] = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
@@ -112,31 +114,25 @@ export default function AgendaView() {
   useEffect(() => {
     if (!user) return;
 
-    const getISOWeek = (date: Date) => {
-        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-        const dayNum = d.getUTCDay() || 7;
-        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-        const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
-        return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-    };
-
     const performWeeklyReset = async () => {
-        if (!db || user.role !== 'owner') return;
+        if (user.role !== 'owner') return;
 
         const now = new Date();
-        // A week is identified by its year and ISO week number.
-        const currentWeekId = `${now.getFullYear()}-W${getISOWeek(now)}`;
+        const year = now.getFullYear();
+        const dayOfYear = Math.floor((now.getTime() - new Date(year, 0, 0).getTime()) / (1000 * 60 * 60 * 24));
+        const weekNumber = Math.ceil((dayOfYear + new Date(year, 0, 1).getDay() + 1) / 7);
+        const currentWeekId = `${year}-W${weekNumber}`;
         const lastResetWeekId = localStorage.getItem('lastResetWeekId');
         
         if (currentWeekId !== lastResetWeekId) {
             console.log(`New week detected (${currentWeekId}). Performing weekly schedule reset...`);
+            if (!db) return;
             try {
                 const batch = writeBatch(db);
                 const days: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
                 
                 days.forEach(day => {
                     const dayRef = doc(db, 'schedule', day);
-                    // Reset the day's schedule
                     batch.update(dayRef, { morning: [], afternoon: [], isOpen: false });
                 });
 
@@ -455,11 +451,7 @@ export default function AgendaView() {
       <header className="p-4 md:p-6 flex justify-between items-center border-b sticky top-0 bg-background/80 backdrop-blur-sm z-10">
         <Link href="/" className="text-2xl font-bold font-headline text-primary">GymAgenda</Link>
         <div className="flex items-center gap-2 md:gap-4">
-          <div className="text-right hidden md:block">
-            <p className="font-semibold">{user.name}</p>
-            <p className="text-sm text-muted-foreground capitalize">{user.role}</p>
-          </div>
-          {user.role === 'owner' ? (
+          {user.role === 'owner' && (
             <>
               <Button onClick={() => setIsModalOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" /> Aggiungi Orari
@@ -468,16 +460,52 @@ export default function AgendaView() {
                 <Trash2 className="h-4 w-4" />
               </Button>
             </>
-          ) : (
-            <div className="flex items-center gap-2 rounded-full border p-2 bg-card">
-              <User className="h-4 w-4 text-primary" />
-              <span className="font-semibold">{user.name}</span>
-            </div>
           )}
-          <ThemeToggle />
-          <Button variant="ghost" size="icon" onClick={handleLogout} aria-label="Logout">
-            <LogOut className="h-4 w-4" />
-          </Button>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                {user.role === 'owner' ? (
+                    <Button variant="ghost" className="flex items-center gap-3 p-1 rounded-full h-auto">
+                        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                            <User className="h-5 w-5" />
+                        </div>
+                        <div className="text-left hidden md:block pr-2">
+                            <p className="font-semibold text-sm leading-tight">{user.name}</p>
+                            <p className="text-xs text-muted-foreground capitalize leading-tight">{user.role}</p>
+                        </div>
+                    </Button>
+                ) : (
+                    <Button variant="outline" className="flex items-center gap-2 rounded-full p-1 pr-3 h-auto">
+                        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                            <User className="h-5 w-5 text-primary" />
+                        </div>
+                        <span className="font-semibold">{user.name}</span>
+                    </Button>
+                )}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Il Mio Account</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                        <Sun className="mr-2 h-4 w-4" />
+                        <span>Tema</span>
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuPortal>
+                        <DropdownMenuSubContent>
+                            <DropdownMenuItem onClick={() => setTheme('light')}>Chiaro</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setTheme('dark')}>Scuro</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setTheme('system')}>Sistema</DropdownMenuItem>
+                        </DropdownMenuSubContent>
+                    </DropdownMenuPortal>
+                </DropdownMenuSub>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Esci</span>
+                </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
