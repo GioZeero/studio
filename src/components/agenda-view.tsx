@@ -513,9 +513,6 @@ export default function AgendaView() {
       
       <header className="p-4 md:p-6 flex justify-between items-center border-b sticky top-0 bg-background/80 backdrop-blur-sm z-10">
         <Link href="/" className="text-2xl font-bold font-headline text-primary">GymAgenda</Link>
-        <div>
-            <h2 className="text-sm font-semibold text-muted-foreground tracking-wider">{dateRange}</h2>
-        </div>
         <div className="flex items-center gap-2 md:gap-4">
           {user.role === 'owner' && (
             <>
@@ -596,6 +593,9 @@ export default function AgendaView() {
       </header>
 
       <main className="p-4 md:p-6 lg:p-8">
+        <div className="text-center mb-6">
+            <h2 className="text-sm font-semibold text-muted-foreground tracking-wider">{dateRange}</h2>
+        </div>
         { loading ? <AgendaViewLoader /> : (
           <div className="space-y-6">
             {schedule.map(daySchedule => {
