@@ -7,7 +7,7 @@ import { Calendar, Clock, Plus, User, Trash2, Sun, Moon, LogOut, Loader2 } from 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AddSlotModal } from './add-slot-modal';
-import { DeleteSlotModal } from './delete-slot-modal';
+import { DeleteSlotModal, type SlotToDelete } from './delete-slot-modal';
 import type { DayOfWeek, DaySchedule, Slot } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { collection, doc, onSnapshot, writeBatch, runTransaction } from 'firebase/firestore';
@@ -224,28 +224,54 @@ export default function AgendaView() {
     }
   };
 
-  const handleDeleteSlot = async (day: DayOfWeek, period: 'morning' | 'afternoon', slotId: string) => {
-    if (!db) return;
-    const dayRef = doc(db, 'schedule', day);
+  const handleDeleteSlots = async (slotsToDelete: SlotToDelete[]) => {
+    if (!db || slotsToDelete.length === 0) return;
+
+    const slotsByDay = slotsToDelete.reduce((acc, slot) => {
+      const day = slot.day as DayOfWeek;
+      if (!acc[day]) {
+        acc[day] = [];
+      }
+      acc[day].push(slot);
+      return acc;
+    }, {} as Record<DayOfWeek, SlotToDelete[]>);
 
     try {
-        await runTransaction(db, async (transaction) => {
-            const dayDoc = await transaction.get(dayRef);
-            if (!dayDoc.exists()) return;
+      await runTransaction(db, async (transaction) => {
+        const dayDocs = await Promise.all(
+          Object.keys(slotsByDay).map(day => transaction.get(doc(db, 'schedule', day as DayOfWeek)))
+        );
 
-            const data = dayDoc.data();
-            const currentPeriodSlots: Slot[] = data[period] || [];
-            const otherPeriodSlots: Slot[] = data[period === 'morning' ? 'afternoon' : 'morning'] || [];
+        const dayDocsMap = new Map(dayDocs.map(d => [d.id, d]));
 
-            const updatedPeriodSlots = currentPeriodSlots.filter(slot => slot.id !== slotId);
-            const dayIsOpen = updatedPeriodSlots.length > 0 || otherPeriodSlots.length > 0;
+        for (const day of Object.keys(slotsByDay) as DayOfWeek[]) {
+          const dayRef = doc(db, 'schedule', day);
+          const dayDoc = dayDocsMap.get(day);
 
-            transaction.update(dayRef, { [period]: updatedPeriodSlots, isOpen: dayIsOpen });
-        });
-        
-        setIsDeleteModalOpen(false);
+          if (!dayDoc || !dayDoc.exists()) continue;
+
+          const data = dayDoc.data();
+          let morningSlots: Slot[] = data.morning || [];
+          let afternoonSlots: Slot[] = data.afternoon || [];
+
+          const slotsForThisDay = slotsByDay[day];
+          const morningIdsToDelete = new Set(slotsForThisDay.filter(s => s.period === 'morning').map(s => s.slotId));
+          const afternoonIdsToDelete = new Set(slotsForThisDay.filter(s => s.period === 'afternoon').map(s => s.slotId));
+
+          const updatedMorningSlots = morningSlots.filter(s => !morningIdsToDelete.has(s.id));
+          const updatedAfternoonSlots = afternoonSlots.filter(s => !afternoonIdsToDelete.has(s.id));
+
+          const dayIsOpen = updatedMorningSlots.length > 0 || updatedAfternoonSlots.length > 0;
+
+          transaction.update(dayRef, {
+            morning: updatedMorningSlots,
+            afternoon: updatedAfternoonSlots,
+            isOpen: dayIsOpen
+          });
+        }
+      });
     } catch (error) {
-        console.error("Errore nella cancellazione: ", error);
+      console.error("Errore nella cancellazione multipla: ", error);
     }
   };
 
@@ -354,7 +380,7 @@ export default function AgendaView() {
       {user.role === 'owner' && (
         <>
           <AddSlotModal isOpen={isModalOpen} onOpenChange={setIsModalOpen} onAddSlot={handleAddSlot} period={modalPeriod} onPeriodChange={setModalPeriod} />
-          <DeleteSlotModal isOpen={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen} schedule={schedule} onDeleteSlot={handleDeleteSlot} />
+          <DeleteSlotModal isOpen={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen} schedule={schedule} onDeleteSlots={handleDeleteSlots} />
         </>
       )}
       

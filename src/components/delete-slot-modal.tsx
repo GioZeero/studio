@@ -1,43 +1,152 @@
 'use client';
 
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import type { DaySchedule, DayOfWeek } from '@/lib/types';
-import { Trash2 } from 'lucide-react';
+import type { DaySchedule, DayOfWeek, Slot } from '@/lib/types';
+import { Info } from 'lucide-react';
 import { ScrollArea } from './ui/scroll-area';
 import { Badge } from './ui/badge';
+import { cn } from '@/lib/utils';
+import { Checkbox } from './ui/checkbox';
+import { Alert, AlertDescription, AlertTitle } from './ui/alert';
+
+export interface SlotToDelete {
+  day: DayOfWeek;
+  period: 'morning' | 'afternoon';
+  slotId: string;
+}
 
 interface DeleteSlotModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   schedule: DaySchedule[];
-  onDeleteSlot: (day: DayOfWeek, period: 'morning' | 'afternoon', slotId: string) => void;
+  onDeleteSlots: (slots: SlotToDelete[]) => void;
 }
 
-export function DeleteSlotModal({ isOpen, onOpenChange, schedule, onDeleteSlot }: DeleteSlotModalProps) {
+export function DeleteSlotModal({ isOpen, onOpenChange, schedule, onDeleteSlots }: DeleteSlotModalProps) {
+  const [selectedSlots, setSelectedSlots] = useState<Map<string, SlotToDelete>>(new Map());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const longPressTimeout = useRef<NodeJS.Timeout | null>(null);
+
   const slotsAvailable = schedule.some(day => day.morning.length > 0 || day.afternoon.length > 0);
 
-  const handleDelete = (day: DayOfWeek, period: 'morning' | 'afternoon', slotId: string) => {
-    onDeleteSlot(day, period, slotId);
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedSlots(new Map());
+      setIsSelectionMode(false);
+    }
+  }, [isOpen]);
+
+  const toggleSelection = (slot: Slot, day: DayOfWeek, period: 'morning' | 'afternoon') => {
+    setSelectedSlots(prev => {
+      const newSelection = new Map(prev);
+      if (newSelection.has(slot.id)) {
+        newSelection.delete(slot.id);
+      } else {
+        newSelection.set(slot.id, { day, period, slotId: slot.id });
+      }
+      if (newSelection.size === 0) {
+        setIsSelectionMode(false);
+      }
+      return newSelection;
+    });
+  };
+
+  const handleInteractionStart = (slot: Slot, day: DayOfWeek, period: 'morning' | 'afternoon') => {
+    if (longPressTimeout.current) {
+      clearTimeout(longPressTimeout.current);
+    }
+    longPressTimeout.current = setTimeout(() => {
+      setIsSelectionMode(true);
+      toggleSelection(slot, day, period);
+      longPressTimeout.current = null;
+    }, 500);
+  };
+
+  const handleInteractionEnd = (slot: Slot, day: DayOfWeek, period: 'morning' | 'afternoon') => {
+    if (longPressTimeout.current) {
+      clearTimeout(longPressTimeout.current);
+      longPressTimeout.current = null;
+      if (isSelectionMode) {
+        toggleSelection(slot, day, period);
+      }
+    }
+  };
+
+  const handleBulkDelete = () => {
+    onDeleteSlots(Array.from(selectedSlots.values()));
+    onOpenChange(false);
+  };
+
+  const renderSlotItem = (slot: Slot, day: DayOfWeek, period: 'morning' | 'afternoon') => {
+    const isSelected = selectedSlots.has(slot.id);
+
+    return (
+      <div
+        key={slot.id}
+        className={cn(
+          'flex items-center justify-between p-2 rounded-md bg-muted/50 transition-colors',
+          isSelectionMode && 'cursor-pointer hover:bg-muted',
+          isSelected && 'bg-primary/20'
+        )}
+        onMouseDown={() => handleInteractionStart(slot, day, period)}
+        onMouseUp={() => handleInteractionEnd(slot, day, period)}
+        onTouchStart={() => handleInteractionStart(slot, day, period)}
+        onTouchEnd={() => handleInteractionEnd(slot, day, period)}
+        onMouseLeave={() => { if (longPressTimeout.current) clearTimeout(longPressTimeout.current); }}
+      >
+        <div className="flex items-center gap-3">
+            {isSelectionMode && (
+              <Checkbox
+                checked={isSelected}
+                onCheckedChange={() => toggleSelection(slot, day, period)}
+                id={`cb-${slot.id}`}
+                aria-label={`Seleziona ${slot.timeRange}`}
+              />
+            )}
+            <label
+              htmlFor={`cb-${slot.id}`}
+              className={cn(isSelectionMode ? 'cursor-pointer' : 'cursor-default')}
+            >
+              <Badge variant={slot.bookedBy.length > 0 ? "secondary" : "default"}>
+                {slot.timeRange} {slot.bookedBy.length > 0 && `(${slot.bookedBy.length})`}
+              </Badge>
+            </label>
+        </div>
+      </div>
+    );
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Cancella Orario</DialogTitle>
+          <DialogTitle>Cancella Orari</DialogTitle>
           <DialogDescription>
-            Seleziona un orario dall'elenco per cancellarlo permanentemente.
+            Tieni premuto su un orario per iniziare la selezione, poi tocca altri orari per aggiungerli.
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="max-h-[60vh] -mr-6 pr-6">
+
+        {isSelectionMode && (
+             <Alert>
+                <Info className="h-4 w-4" />
+                <AlertTitle>Modalità Selezione Attiva</AlertTitle>
+                <AlertDescription>
+                    {selectedSlots.size} orari selezionati.
+                </AlertDescription>
+            </Alert>
+        )}
+
+        <ScrollArea className="max-h-[50vh] -mr-6 pr-6">
           {slotsAvailable ? (
             <Accordion type="multiple" className="w-full">
               {schedule.map(daySchedule => {
@@ -53,14 +162,7 @@ export function DeleteSlotModal({ isOpen, onOpenChange, schedule, onDeleteSlot }
                           <div>
                             <h4 className="text-sm font-semibold mb-2 text-muted-foreground">Mattina</h4>
                             <div className="space-y-2">
-                              {daySchedule.morning.map(slot => (
-                                <div key={slot.id} className="flex items-center justify-between p-2 rounded-md bg-muted/50">
-                                  <Badge variant={slot.bookedBy.length > 0 ? "secondary" : "default"}>{slot.timeRange} {slot.bookedBy.length > 0 && `(${slot.bookedBy.length})`}</Badge>
-                                  <Button variant="ghost" size="icon" onClick={() => handleDelete(daySchedule.day, 'morning', slot.id)}>
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                  </Button>
-                                </div>
-                              ))}
+                              {daySchedule.morning.map(slot => renderSlotItem(slot, daySchedule.day, 'morning'))}
                             </div>
                           </div>
                         )}
@@ -68,14 +170,7 @@ export function DeleteSlotModal({ isOpen, onOpenChange, schedule, onDeleteSlot }
                           <div>
                              <h4 className="text-sm font-semibold mb-2 text-muted-foreground">Pomeriggio</h4>
                              <div className="space-y-2">
-                              {daySchedule.afternoon.map(slot => (
-                                <div key={slot.id} className="flex items-center justify-between p-2 rounded-md bg-muted/50">
-                                  <Badge variant={slot.bookedBy.length > 0 ? "secondary" : "default"}>{slot.timeRange} {slot.bookedBy.length > 0 && `(${slot.bookedBy.length})`}</Badge>
-                                   <Button variant="ghost" size="icon" onClick={() => handleDelete(daySchedule.day, 'afternoon', slot.id)}>
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                  </Button>
-                                </div>
-                              ))}
+                              {daySchedule.afternoon.map(slot => renderSlotItem(slot, daySchedule.day, 'afternoon'))}
                             </div>
                           </div>
                         )}
@@ -89,6 +184,16 @@ export function DeleteSlotModal({ isOpen, onOpenChange, schedule, onDeleteSlot }
             <p className="text-center text-muted-foreground py-8">Non ci sono orari da cancellare.</p>
           )}
         </ScrollArea>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Annulla</Button>
+          <Button
+            variant="destructive"
+            onClick={handleBulkDelete}
+            disabled={selectedSlots.size === 0}
+          >
+            Cancella Selezionati ({selectedSlots.size})
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
