@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Calendar, Clock, Plus, User, Trash2, Sun, Moon, LogOut, Loader2, List, FileText } from 'lucide-react';
+import { Calendar, Clock, Plus, User, Trash2, Sun, Moon, LogOut, Loader2, List, FileText, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AddSlotModal } from './add-slot-modal';
@@ -21,7 +21,7 @@ import { ExpiryReminderModal } from './expiry-reminder-modal';
 import { SubscriptionModal } from './subscription-modal';
 import { ClientListModal } from './client-list-modal';
 import { isPast } from 'date-fns';
-import { useToast } from '@/hooks/use-toast';
+import { NotificationsModal } from './notifications-modal';
 
 const initialScheduleData: DaySchedule[] = [
   { day: 'Lunedì', morning: [], afternoon: [], isOpen: false },
@@ -73,6 +73,7 @@ export default function AgendaView() {
   const [isSubscriptionModalOpen, setSubscriptionModalOpen] = useState(false);
   const [isClientListModalOpen, setClientListModalOpen] = useState(false);
   const [isExpiryReminderOpen, setExpiryReminderOpen] = useState(false);
+  const [isNotificationsModalOpen, setNotificationsModalOpen] = useState(false);
 
   const [modalPeriod, setModalPeriod] = useState<'morning' | 'afternoon'>('morning');
   const [bookingSlotId, setBookingSlotId] = useState<string | null>(null);
@@ -80,7 +81,6 @@ export default function AgendaView() {
   const [dateRange, setDateRange] = useState('');
   const router = useRouter();
   const { setTheme } = useTheme();
-  const { toast } = useToast();
   
   useEffect(() => {
     const dayNames: DayOfWeek[] = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
@@ -133,7 +133,6 @@ export default function AgendaView() {
           }
         }
       } else {
-        // Self-heal: User is in localStorage but not Firestore. Re-create them.
         try {
           console.warn(`User '${name}' found in localStorage but not in Firestore. Re-creating user.`);
           const newUser: Omit<AppUser, 'id'> = { name, role };
@@ -288,19 +287,6 @@ export default function AgendaView() {
   const handleBookSlot = async (slotToBook: Slot) => {
     if (!db || !user || bookingSlotId === slotToBook.id) return;
     
-    if (user.role === 'client') {
-      const isExpired = !user.subscriptionExpiry || isPast(new Date(user.subscriptionExpiry));
-      if (isExpired) {
-        setExpiryReminderOpen(true);
-        toast({
-          variant: "destructive",
-          title: "Abbonamento Scaduto",
-          description: "Per favore, rinnova il tuo abbonamento per prenotare.",
-        });
-        return;
-      }
-    }
-
     setBookingSlotId(slotToBook.id);
 
     const dayOfWeek = schedule.find(day => 
@@ -513,6 +499,7 @@ export default function AgendaView() {
                     <AddSlotModal isOpen={isAddSlotModalOpen} onOpenChange={setAddSlotModalOpen} onAddSlot={handleAddSlot} period={modalPeriod} onPeriodChange={setModalPeriod} />
                     <DeleteSlotModal isOpen={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen} schedule={schedule} onDeleteSlots={handleDeleteSlots} />
                     <ClientListModal isOpen={isClientListModalOpen} onOpenChange={setClientListModalOpen} />
+                    <NotificationsModal isOpen={isNotificationsModalOpen} onOpenChange={setNotificationsModalOpen} />
                 </>
             )}
             {user.role === 'client' && (
@@ -573,10 +560,16 @@ export default function AgendaView() {
                     </DropdownMenuItem>
                 )}
                 {user.role === 'owner' && (
+                  <>
                     <DropdownMenuItem onClick={() => setClientListModalOpen(true)}>
                         <List className="mr-2 h-4 w-4" />
                         <span>Clienti e Banca</span>
                     </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setNotificationsModalOpen(true)}>
+                        <Bell className="mr-2 h-4 w-4" />
+                        <span>Notifiche</span>
+                    </DropdownMenuItem>
+                  </>
                 )}
                 
                 <DropdownMenuSub>
