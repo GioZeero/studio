@@ -10,7 +10,7 @@ import { AddSlotModal } from './add-slot-modal';
 import { DeleteSlotModal, type SlotToDelete } from './delete-slot-modal';
 import type { DayOfWeek, DaySchedule, Slot } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
-import { collection, doc, onSnapshot, writeBatch, runTransaction, getDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, writeBatch, runTransaction } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Skeleton } from './ui/skeleton';
 import { ThemeToggle } from './theme-toggle';
@@ -112,48 +112,45 @@ export default function AgendaView() {
   useEffect(() => {
     if (!user) return;
 
-    const checkAndPerformWeeklyReset = async () => {
-        if (!db) return;
-        
-        const metadataRef = doc(db, 'metadata', 'scheduleReset');
-        
-        try {
-            const metadataSnap = await getDoc(metadataRef);
-            const lastReset = metadataSnap.exists() ? metadataSnap.data().lastReset.toDate() : null;
+    const getISOWeek = (date: Date) => {
+        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+        const dayNum = d.getUTCDay() || 7;
+        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+        const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+        return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+    };
 
-            const now = new Date();
-            const lastSundayAt23 = new Date(now);
-            lastSundayAt23.setDate(now.getDate() - now.getDay());
-            lastSundayAt23.setHours(23, 0, 0, 0);
+    const performWeeklyReset = async () => {
+        if (!db || user.role !== 'owner') return;
 
-            if (now < lastSundayAt23) {
-                lastSundayAt23.setDate(lastSundayAt23.getDate() - 7);
-            }
-            
-            if (!lastReset || lastReset < lastSundayAt23) {
-                console.log('Performing weekly schedule reset...');
-                
+        const now = new Date();
+        // A week is identified by its year and ISO week number.
+        const currentWeekId = `${now.getFullYear()}-W${getISOWeek(now)}`;
+        const lastResetWeekId = localStorage.getItem('lastResetWeekId');
+        
+        if (currentWeekId !== lastResetWeekId) {
+            console.log(`New week detected (${currentWeekId}). Performing weekly schedule reset...`);
+            try {
                 const batch = writeBatch(db);
                 const days: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
                 
-                // Assuming all day documents exist, otherwise we'd need to check
                 days.forEach(day => {
                     const dayRef = doc(db, 'schedule', day);
+                    // Reset the day's schedule
                     batch.update(dayRef, { morning: [], afternoon: [], isOpen: false });
                 });
 
-                batch.set(metadataRef, { lastReset: new Date() });
-
                 await batch.commit();
+                localStorage.setItem('lastResetWeekId', currentWeekId);
                 console.log('Weekly reset successful.');
+            } catch (error) {
+                 console.error("Error during weekly reset:", error);
             }
-        } catch (error) {
-            console.error("Error during weekly reset check:", error);
         }
     };
     
     setLoading(true);
-    checkAndPerformWeeklyReset().finally(() => {
+    performWeeklyReset().finally(() => {
         if (!db) {
             console.warn("Il database Firestore non è disponibile.");
             setSchedule(initialScheduleData);
