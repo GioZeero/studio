@@ -1,13 +1,6 @@
-
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ATTENZIONE: QUESTE REGOLE SONO INSICURE.
-    // Consentono a chiunque di leggere e scrivere nel tuo database.
-    // Sono adatte solo per lo sviluppo e la prototipazione.
-    // Per un'applicazione reale, è fondamentale proteggere i dati:
-    // https://firebase.google.com/docs/firestore/security/get-started
     match /{document=**} {
       allow read, write: if true;
     }
