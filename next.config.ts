@@ -18,20 +18,6 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  async headers() {
-    return [
-      {
-        // This targets the service worker file specifically to apply caching headers
-        source: '/firebase-messaging-sw.js',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
-          },
-        ],
-      },
-    ];
-  },
 };
 
 export default nextConfig;

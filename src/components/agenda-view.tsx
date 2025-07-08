@@ -15,9 +15,6 @@ import { db } from '@/lib/firebase';
 import { Skeleton } from './ui/skeleton';
 import { ThemeToggle } from './theme-toggle';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { onMessage } from 'firebase/messaging';
-import { useToast } from '@/hooks/use-toast';
-import { messaging } from '@/lib/firebase-client';
 
 const initialScheduleData: DaySchedule[] = [
   { day: 'Lunedì', morning: [], afternoon: [], isOpen: false },
@@ -28,18 +25,6 @@ const initialScheduleData: DaySchedule[] = [
   { day: 'Sabato', morning: [], afternoon: [], isOpen: false },
   { day: 'Domenica', morning: [], afternoon: [], isOpen: false },
 ];
-
-const sendNotification = async (payload: { targetRole: 'owner' | 'client', title: string, body: string }) => {
-    try {
-        await fetch('/api/notify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-    } catch (error) {
-        console.error("Failed to send notification:", error);
-    }
-};
 
 function AgendaViewLoader() {
   return (
@@ -80,7 +65,6 @@ export default function AgendaView() {
   const [modalPeriod, setModalPeriod] = useState<'morning' | 'afternoon'>('morning');
   const [bookingSlotId, setBookingSlotId] = useState<string | null>(null);
   const router = useRouter();
-  const { toast } = useToast();
 
   useEffect(() => {
     const storedUser = localStorage.getItem('gymUser');
@@ -96,32 +80,6 @@ export default function AgendaView() {
     }
     setCheckingAuth(false);
   }, [router]);
-
-  useEffect(() => {
-    if (!user) return;
-
-    // Gestore per le notifiche quando l'app è in primo piano
-    const setupForegroundMessageHandler = async () => {
-      try {
-        const messagingInstance = await messaging();
-        if (messagingInstance) {
-          onMessage(messagingInstance, (payload) => {
-            console.log('Messaggio ricevuto in primo piano: ', payload);
-            if (payload.data) {
-                toast({
-                    title: payload.data.notificationTitle,
-                    description: payload.data.notificationBody,
-                });
-            }
-          });
-        }
-      } catch (error) {
-        console.error("Errore nell'impostare il gestore di messaggi in primo piano:", error);
-      }
-    };
-    
-    setupForegroundMessageHandler();
-  }, [user, toast]);
 
   useEffect(() => {
     if (!user) return;
@@ -206,12 +164,6 @@ export default function AgendaView() {
 
             transaction.update(dayRef, { [period]: updatedPeriodSlots, isOpen: true });
         });
-
-        await sendNotification({
-            targetRole: 'client',
-            title: 'Nuovi orari disponibili!',
-            body: `È stato aggiunto un nuovo orario per ${day}: ${timeRange}`,
-        });
     } catch (error) {
         console.error("Errore nell'aggiungere l'orario: ", error);
     }
@@ -264,14 +216,6 @@ export default function AgendaView() {
             transaction.update(dayRef, { morning: updatedMorning, afternoon: updatedAfternoon });
             
             return wasBookingAction;
-        }).then(async (isBooking) => {
-            if (isBooking) {
-                await sendNotification({
-                    targetRole: 'owner',
-                    title: 'Nuova prenotazione!',
-                    body: `${user.name} si è prenotato per ${slotToBook.timeRange} il giorno ${dayOfWeek}.`,
-                });
-            }
         });
     } catch (error) {
         console.error("Errore nella transazione di prenotazione: ", error);
