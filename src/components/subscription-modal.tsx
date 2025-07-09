@@ -71,17 +71,26 @@ export function SubscriptionModal({ isOpen, onOpenChange, user, onSubscriptionUp
           throw new Error("User document does not exist!");
         }
 
-        const currentExpiry = userDoc.data().subscriptionExpiry ? new Date(userDoc.data().subscriptionExpiry) : new Date();
+        const userData = userDoc.data();
+        const currentExpiry = userData.subscriptionExpiry ? new Date(userData.subscriptionExpiry) : new Date(0);
         const now = new Date();
-        const baseDate = currentExpiry > now ? currentExpiry : now;
+        const isExpired = currentExpiry <= now;
+        
+        const baseDate = isExpired ? now : currentExpiry;
+        const monthsToAdd = isExpired ? selectedOption.months - 1 : selectedOption.months;
 
         const updatedExpiryDate = new Date(baseDate);
-        updatedExpiryDate.setMonth(updatedExpiryDate.getMonth() + selectedOption.months);
+        if (monthsToAdd >= 0) {
+          updatedExpiryDate.setMonth(updatedExpiryDate.getMonth() + monthsToAdd);
+        }
 
-        transaction.update(userRef, { subscriptionExpiry: updatedExpiryDate.toISOString() });
+        const finalExpiryDate = new Date(updatedExpiryDate.getFullYear(), updatedExpiryDate.getMonth() + 1, 0);
+        finalExpiryDate.setHours(23, 59, 59, 999);
+
+        transaction.update(userRef, { subscriptionExpiry: finalExpiryDate.toISOString() });
         transaction.set(bankRef, { amount: increment(selectedOption.price) }, { merge: true });
         
-        return updatedExpiryDate;
+        return finalExpiryDate;
       });
 
       onSubscriptionUpdate(newExpiryDate.toISOString());
@@ -104,8 +113,8 @@ export function SubscriptionModal({ isOpen, onOpenChange, user, onSubscriptionUp
   };
 
   const currentMonth = format(new Date(), 'MMMM yyyy', { locale: it });
-  const expiryMonth = user.subscriptionExpiry
-    ? format(new Date(user.subscriptionExpiry), 'MMMM yyyy', { locale: it })
+  const expiryDate = user.subscriptionExpiry
+    ? format(new Date(user.subscriptionExpiry), 'dd MMMM yyyy', { locale: it })
     : 'N/A';
 
   return (
@@ -125,7 +134,7 @@ export function SubscriptionModal({ isOpen, onOpenChange, user, onSubscriptionUp
             </div>
             <div className="text-center space-y-1">
               <p className="text-sm text-muted-foreground">Scadenza Abbonamento</p>
-              <p className="font-semibold capitalize">{expiryMonth}</p>
+              <p className="font-semibold capitalize">{expiryDate}</p>
             </div>
           </div>
           <DialogFooter className="flex-col sm:flex-col sm:space-x-0 gap-2">
@@ -133,7 +142,7 @@ export function SubscriptionModal({ isOpen, onOpenChange, user, onSubscriptionUp
             <div className="grid grid-cols-3 gap-2">
               {options.map((opt) => (
                 <Button key={opt.months} onClick={() => handleOptionClick(opt)}>
-                  +{opt.months} Mese{opt.months > 1 ? 'i' : ''}
+                  +{opt.months} {opt.months > 1 ? 'Mesi' : 'Mese'}
                 </Button>
               ))}
             </div>
@@ -147,7 +156,7 @@ export function SubscriptionModal({ isOpen, onOpenChange, user, onSubscriptionUp
             <AlertDialogHeader>
               <AlertDialogTitle>Conferma Pagamento</AlertDialogTitle>
               <AlertDialogDescription>
-                Confermi di aver pagato {selectedOption.price}€ alla Banca per rinnovare l'abbonamento di {selectedOption.months} mese{selectedOption.months > 1 ? 'i' : ''}?
+                Confermi di aver pagato {selectedOption.price}€ alla Banca per rinnovare l'abbonamento di {selectedOption.months} {selectedOption.months > 1 ? 'mesi' : 'mese'}?
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
