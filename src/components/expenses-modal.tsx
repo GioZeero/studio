@@ -176,6 +176,7 @@ export function ExpensesModal({ isOpen, onOpenChange, user }: ExpensesModalProps
           </div>
           {user?.role === 'owner' && (
             <DialogFooter>
+              <Button variant="outline">Aggiungi Goal</Button>
               <Button onClick={() => setAddExpenseModalOpen(true)}>
                 Aggiungi Spesa
               </Button>
