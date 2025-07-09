@@ -3,13 +3,12 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Calendar, Clock, Plus, User, Trash2, Sun, Moon, LogOut, Loader2, List, FileText, Bell } from 'lucide-react';
+import { Calendar, Plus, User, Trash2, Sun, Moon, LogOut, Loader2, List, FileText, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AddSlotModal } from './add-slot-modal';
 import { DeleteSlotModal, type SlotToDelete } from './delete-slot-modal';
 import type { DayOfWeek, DaySchedule, Slot, User as AppUser } from '@/lib/types';
-import { Badge } from '@/components/ui/badge';
 import { collection, doc, onSnapshot, writeBatch, runTransaction, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Skeleton } from './ui/skeleton';
@@ -22,6 +21,7 @@ import { SubscriptionModal } from './subscription-modal';
 import { ClientListModal } from './client-list-modal';
 import { isPast } from 'date-fns';
 import { NotificationsModal } from './notifications-modal';
+import { BookingConfirmationModal } from './booking-confirmation-modal';
 
 const initialScheduleData: DaySchedule[] = [
   { day: 'Lunedì', morning: [], afternoon: [], isOpen: false },
@@ -74,6 +74,8 @@ export default function AgendaView() {
   const [isClientListModalOpen, setClientListModalOpen] = useState(false);
   const [isExpiryReminderOpen, setExpiryReminderOpen] = useState(false);
   const [isNotificationsModalOpen, setNotificationsModalOpen] = useState(false);
+  const [isBookingModalOpen, setBookingModalOpen] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
 
   const [modalPeriod, setModalPeriod] = useState<'morning' | 'afternoon'>('morning');
   const [bookingSlotId, setBookingSlotId] = useState<string | null>(null);
@@ -285,7 +287,7 @@ export default function AgendaView() {
   };
 
   const handleBookSlot = async (slotToBook: Slot) => {
-    if (!db || !user || bookingSlotId === slotToBook.id) return;
+    if (!db || !user || bookingSlotId) return;
     
     setBookingSlotId(slotToBook.id);
 
@@ -296,6 +298,7 @@ export default function AgendaView() {
 
     if (!dayOfWeek) {
         setBookingSlotId(null);
+        setBookingModalOpen(false);
         return;
     }
 
@@ -336,6 +339,7 @@ export default function AgendaView() {
         console.error("Errore nella transazione di prenotazione: ", error);
     } finally {
         setBookingSlotId(null);
+        setBookingModalOpen(false);
     }
   };
 
@@ -445,60 +449,33 @@ export default function AgendaView() {
     }
 
     const isBookedByUser = slot.bookedBy.includes(user.name);
-    const isLoading = bookingSlotId === slot.id;
+    const isProcessing = bookingSlotId === slot.id;
 
     return (
-        <Popover key={slot.id}>
-            <PopoverTrigger asChild>
-                <button
-                    disabled={isLoading}
-                    className={cn(
-                        "group relative flex h-auto min-w-[120px] flex-grow flex-col items-start rounded-md border p-2 text-left transition-all disabled:opacity-50",
-                        isBookedByUser 
-                            ? "border-primary bg-primary/10" 
-                            : "border-border bg-transparent hover:bg-accent/50",
-                        isLoading && "animate-pulse"
-                    )}
-                >
-                    {isLoading && <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="h-4 w-4 animate-spin"/></div>}
-                    <p className="font-semibold text-sm">{slot.timeRange}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {slot.bookedBy.length} prenotati
-                    </p>
-                    {isBookedByUser && !isLoading && (
-                      <div className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary" />
-                    )}
-                </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-4">
-                <div className="space-y-4">
-                    <div className="text-center">
-                        <p className="font-semibold">{isBookedByUser ? 'Sei già prenotato/a' : 'Conferma prenotazione'}</p>
-                        <div className="text-sm text-muted-foreground">
-                            <p>Orario: {slot.timeRange}</p>
-                            {slot.createdBy && <p>Creato da: {slot.createdBy}</p>}
-                        </div>
-                    </div>
-
-                    {slot.bookedBy.length > 0 && (
-                        <div className="text-sm text-center">
-                            <p className="font-semibold">Persone prenotate ({slot.bookedBy.length}):</p>
-                            <div className="text-muted-foreground max-h-20 overflow-y-auto">
-                                {slot.bookedBy.map((name, i) => <div key={i}>{name}{name === user.name && ' (Tu)'}</div>)}
-                            </div>
-                        </div>
-                    )}
-
-                    <Button onClick={() => handleBookSlot(slot)} className="w-full" size="sm" disabled={isLoading}>
-                         {isLoading ? (
-                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Attendere...</>
-                        ) : (
-                            isBookedByUser ? 'Cancella prenotazione' : 'Prenota ora'
-                        )}
-                    </Button>
-                </div>
-            </PopoverContent>
-        </Popover>
+        <button
+            key={slot.id}
+            disabled={!!bookingSlotId}
+            onClick={() => {
+                setSelectedSlot(slot);
+                setBookingModalOpen(true);
+            }}
+            className={cn(
+                "group relative flex h-auto min-w-[120px] flex-grow flex-col items-start rounded-md border p-2 text-left transition-all disabled:opacity-50",
+                isBookedByUser 
+                    ? "border-primary bg-primary/10" 
+                    : "border-border bg-transparent hover:bg-accent/50",
+                isProcessing && "animate-pulse"
+            )}
+        >
+            {isProcessing && <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="h-4 w-4 animate-spin"/></div>}
+            <p className="font-semibold text-sm">{slot.timeRange}</p>
+            <p className="text-xs text-muted-foreground">
+              {slot.bookedBy.length} prenotati
+            </p>
+            {isBookedByUser && !isProcessing && (
+              <div className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary" />
+            )}
+        </button>
     );
   };
 
@@ -518,6 +495,14 @@ export default function AgendaView() {
                 <>
                     <ExpiryReminderModal isOpen={isExpiryReminderOpen} onOpenChange={setExpiryReminderOpen} user={user} onSubscriptionUpdate={handleSubscriptionUpdate} />
                     <SubscriptionModal isOpen={isSubscriptionModalOpen} onOpenChange={setSubscriptionModalOpen} user={user} onSubscriptionUpdate={handleSubscriptionUpdate} />
+                    <BookingConfirmationModal
+                        isOpen={isBookingModalOpen}
+                        onOpenChange={setBookingModalOpen}
+                        slot={selectedSlot}
+                        user={user}
+                        onConfirm={handleBookSlot}
+                        isLoading={!!bookingSlotId}
+                    />
                 </>
             )}
         </>
