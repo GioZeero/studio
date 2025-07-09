@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Calendar, Plus, User, Trash2, Sun, Moon, LogOut, Loader2, List, FileText, Bell } from 'lucide-react';
+import { Calendar, Plus, User, Trash2, Sun, Moon, LogOut, Loader2, List, FileText, Bell, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AddSlotModal } from './add-slot-modal';
@@ -23,6 +23,7 @@ import { ClientListModal } from './client-list-modal';
 import { isPast } from 'date-fns';
 import { NotificationsModal } from './notifications-modal';
 import { BookingConfirmationModal } from './booking-confirmation-modal';
+import { ExpensesModal } from './expenses-modal';
 
 const initialScheduleData: DaySchedule[] = [
   { day: 'Lunedì', morning: [], afternoon: [], isOpen: false },
@@ -76,6 +77,7 @@ export default function AgendaView() {
   const [isExpiryReminderOpen, setExpiryReminderOpen] = useState(false);
   const [isNotificationsModalOpen, setNotificationsModalOpen] = useState(false);
   const [isBookingModalOpen, setBookingModalOpen] = useState(false);
+  const [isExpensesModalOpen, setExpensesModalOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
 
   const [modalPeriod, setModalPeriod] = useState<'morning' | 'afternoon'>('morning');
@@ -516,16 +518,17 @@ export default function AgendaView() {
                 <>
                     <ExpiryReminderModal isOpen={isExpiryReminderOpen} onOpenChange={setExpiryReminderOpen} user={user} onSubscriptionUpdate={handleSubscriptionUpdate} />
                     <SubscriptionModal isOpen={isSubscriptionModalOpen} onOpenChange={setSubscriptionModalOpen} user={user} onSubscriptionUpdate={handleSubscriptionUpdate} />
-                    <BookingConfirmationModal
-                        isOpen={isBookingModalOpen}
-                        onOpenChange={setBookingModalOpen}
-                        slot={selectedSlot}
-                        user={user}
-                        onConfirm={handleBookSlot}
-                        isLoading={!!bookingSlotId}
-                    />
                 </>
             )}
+            <BookingConfirmationModal
+                isOpen={isBookingModalOpen}
+                onOpenChange={setBookingModalOpen}
+                slot={selectedSlot}
+                user={user}
+                onConfirm={handleBookSlot}
+                isLoading={!!bookingSlotId}
+            />
+            <ExpensesModal isOpen={isExpensesModalOpen} onOpenChange={setExpensesModalOpen} user={user} />
         </>
       )}
       
@@ -586,6 +589,11 @@ export default function AgendaView() {
                     </DropdownMenuItem>
                   </>
                 )}
+
+                <DropdownMenuItem onClick={() => setExpensesModalOpen(true)}>
+                    <Receipt className="mr-2 h-4 w-4" />
+                    <span>Spese</span>
+                </DropdownMenuItem>
                 
                 <DropdownMenuSub>
                     <DropdownMenuSubTrigger>

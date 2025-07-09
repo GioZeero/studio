@@ -23,3 +23,10 @@ export interface User {
 export interface ClientData extends User {
   id: string;
 }
+
+export interface Expense {
+  id: string;
+  name: string;
+  cost: number;
+  date: string; // ISO String
+}
