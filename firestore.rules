@@ -18,13 +18,18 @@ service cloud.firestore {
     }
 
     // Allow read/write access to app_meta
-    match /app_meta/{docId} {
-        allow read, write: if true;
+    match /app_meta/{document} {
+      allow read, write: if true;
+    }
+    
+    // Allow read/write/delete access to expenses
+    match /expenses/{expenseId} {
+        allow read, write, delete: if true;
     }
 
-    // Allow read/write access to expenses documents
-    match /expenses/{expenseId} {
-      allow read, write: if true;
+    // Allow read/write/delete access to goals
+    match /goals/{goalId} {
+        allow read, write, delete: if true;
     }
   }
 }

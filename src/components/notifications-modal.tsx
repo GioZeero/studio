@@ -3,18 +3,19 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import type { ClientData } from '@/lib/types';
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import type { ClientData, Goal } from '@/lib/types';
 import { format, isPast } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { ScrollArea } from './ui/scroll-area';
 import { Skeleton } from './ui/skeleton';
-import { AlertCircle, Bell } from 'lucide-react';
+import { AlertCircle, Bell, Trophy } from 'lucide-react';
 
 interface Notification {
   id: string;
   message: string;
   date: Date;
+  type: 'subscription' | 'goal';
 }
 
 interface NotificationsModalProps {
@@ -29,26 +30,40 @@ export function NotificationsModal({ isOpen, onOpenChange }: NotificationsModalP
   useEffect(() => {
     if (!isOpen || !db) return;
 
-    const fetchExpiredSubscriptions = async () => {
+    const fetchNotifications = async () => {
       setLoading(true);
       try {
-        const q = query(collection(db, 'users'), where('role', '==', 'client'));
-        const querySnapshot = await getDocs(q);
-        const clientList = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as ClientData[];
+        // Fetch expired subscriptions
+        const usersQuery = query(collection(db, 'users'), where('role', '==', 'client'));
+        const usersSnapshot = await getDocs(usersQuery);
+        const clientList = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as ClientData[];
 
-        const expiredNotifications = clientList
+        const subscriptionNotifications: Notification[] = clientList
           .filter(client => client.subscriptionExpiry && isPast(new Date(client.subscriptionExpiry)))
           .map(client => ({
-            id: client.id,
+            id: `sub-${client.id}`,
             message: `L'abbonamento di ${client.name} è scaduto.`,
             date: new Date(client.subscriptionExpiry!),
-          }))
-          .sort((a, b) => b.date.getTime() - a.date.getTime());
+            type: 'subscription'
+          }));
 
-        setNotifications(expiredNotifications);
+        // Fetch completed goals
+        const goalsQuery = query(collection(db, 'goals'), where('status', '==', 'completed'), orderBy('completedAt', 'desc'));
+        const goalsSnapshot = await getDocs(goalsQuery);
+        const goalNotifications: Notification[] = goalsSnapshot.docs.map(doc => {
+            const goal = {id: doc.id, ...doc.data()} as Goal;
+            return {
+                id: `goal-${goal.id}`,
+                message: `Obiettivo Raggiunto: ${goal.name}!`,
+                date: new Date(goal.completedAt!),
+                type: 'goal'
+            };
+        });
+
+        const allNotifications = [...subscriptionNotifications, ...goalNotifications];
+        allNotifications.sort((a, b) => b.date.getTime() - a.date.getTime());
+
+        setNotifications(allNotifications);
       } catch (error) {
         console.error("Error fetching notifications:", error);
       } finally {
@@ -56,8 +71,19 @@ export function NotificationsModal({ isOpen, onOpenChange }: NotificationsModalP
       }
     };
 
-    fetchExpiredSubscriptions();
+    fetchNotifications();
   }, [isOpen]);
+  
+  const getNotificationIcon = (type: Notification['type']) => {
+    switch (type) {
+        case 'subscription':
+            return <AlertCircle className="h-5 w-5 text-destructive mt-1 flex-shrink-0" />;
+        case 'goal':
+            return <Trophy className="h-5 w-5 text-yellow-500 mt-1 flex-shrink-0" />;
+        default:
+            return <Bell className="h-5 w-5 text-muted-foreground mt-1 flex-shrink-0" />;
+    }
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -68,7 +94,7 @@ export function NotificationsModal({ isOpen, onOpenChange }: NotificationsModalP
             Notifiche
           </DialogTitle>
           <DialogDescription>
-            Qui trovi gli aggiornamenti importanti sugli abbonamenti dei clienti.
+            Qui trovi gli aggiornamenti importanti sugli abbonamenti e gli obiettivi.
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="h-72 border rounded-md p-2">
@@ -86,11 +112,11 @@ export function NotificationsModal({ isOpen, onOpenChange }: NotificationsModalP
                 ) : notifications.length > 0 ? (
                     notifications.map(notification => (
                         <div key={notification.id} className="flex items-start gap-4">
-                            <AlertCircle className="h-5 w-5 text-destructive mt-1 flex-shrink-0" />
+                            {getNotificationIcon(notification.type)}
                             <div>
                                 <p className="font-medium">{notification.message}</p>
                                 <p className="text-sm text-muted-foreground">
-                                    Scaduto il: {format(notification.date, 'dd MMMM yyyy', { locale: it })}
+                                    {format(notification.date, 'dd MMMM yyyy', { locale: it })}
                                 </p>
                             </div>
                         </div>
@@ -98,7 +124,6 @@ export function NotificationsModal({ isOpen, onOpenChange }: NotificationsModalP
                 ) : (
                     <div className="text-center text-muted-foreground py-10">
                         <p>Non ci sono nuove notifiche.</p>
-                        <p className="text-sm">Tutti gli abbonamenti sono in regola!</p>
                     </div>
                 )}
             </div>

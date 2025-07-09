@@ -30,3 +30,12 @@ export interface Expense {
   cost: number;
   date: string; // ISO String
 }
+
+export interface Goal {
+  id: string;
+  name: string;
+  cost: number;
+  status: 'active' | 'completed';
+  createdAt: string; // ISO String
+  completedAt?: string; // ISO String
+}
