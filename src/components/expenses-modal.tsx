@@ -182,7 +182,6 @@ export function ExpensesModal({ isOpen, onOpenChange, user }: ExpensesModalProps
   };
   
   const activeGoals = useMemo(() => goals.filter(g => g.status === 'active'), [goals]);
-  const completedGoals = useMemo(() => goals.filter(g => g.status === 'completed'), [goals]);
 
   return (
     <>
@@ -194,109 +193,91 @@ export function ExpensesModal({ isOpen, onOpenChange, user }: ExpensesModalProps
               Monitora le finanze e gli obiettivi di crescita della palestra.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid md:grid-cols-2 gap-6 max-h-[60vh] overflow-y-auto -mr-6 pr-6 py-4">
-            <div className="space-y-4">
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Obiettivi Attivi</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        {loading ? (
-                             [...Array(2)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)
-                        ) : activeGoals.length > 0 ? (
-                           activeGoals.map((goal) => (
-                            <div key={goal.id}>
-                                <div className="flex justify-between items-center mb-1">
-                                    <span className="text-sm font-medium">{goal.name}</span>
-                                    {user?.role === 'owner' && (
-                                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setGoalToDelete(goal)}>
+          <div className="space-y-6 max-h-[60vh] overflow-y-auto -mr-6 pr-6 py-4">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Elenco Spese</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <ScrollArea className="h-[30vh] border rounded-md">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Spesa</TableHead>
+                            <TableHead>Data</TableHead>
+                            <TableHead>Costo</TableHead>
+                            {user?.role === 'owner' && <TableHead className="text-right">Azioni</TableHead>}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {loading ? (
+                            [...Array(5)].map((_, i) => (
+                              <TableRow key={i}>
+                                <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                                <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                                <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                                {user?.role === 'owner' && <TableCell><Skeleton className="h-8 w-8 ml-auto" /></TableCell>}
+                              </TableRow>
+                            ))
+                          ) : expenses.length > 0 ? (
+                            expenses.map((expense) => (
+                              <TableRow key={expense.id}>
+                                <TableCell className="font-medium">{expense.name}</TableCell>
+                                <TableCell>{format(new Date(expense.date), 'dd MMM yyyy', { locale: it })}</TableCell>
+                                <TableCell>€{expense.cost.toFixed(2)}</TableCell>
+                                {user?.role === 'owner' && (
+                                    <TableCell className="text-right">
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => setExpenseToDelete(expense)}
+                                            disabled={isProcessingDelete}
+                                        >
                                             <Trash2 className="h-4 w-4 text-destructive" />
                                         </Button>
-                                    )}
-                                </div>
-                                <Progress value={(bankTotal / goal.cost) * 100} />
-                                <p className="text-xs text-muted-foreground text-right mt-1">€{Math.min(bankTotal, goal.cost).toFixed(0)} / €{goal.cost.toFixed(0)}</p>
-                            </div>
-                           ))
-                        ) : (
-                            <p className="text-sm text-center text-muted-foreground py-4">Nessun obiettivo attivo.</p>
-                        )}
-                    </CardContent>
-                </Card>
-                 <Card>
-                    <CardHeader>
-                        <CardTitle>Obiettivi Completati</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        {loading ? (
-                             <Skeleton className="h-8 w-full" />
-                        ) : completedGoals.length > 0 ? (
-                            <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
-                                {completedGoals.map(g => <li key={g.id}>{g.name}</li>)}
-                            </ul>
-                        ) : (
-                            <p className="text-sm text-center text-muted-foreground py-4">Nessun obiettivo completato.</p>
-                        )}
-                    </CardContent>
-                </Card>
-            </div>
-            <div className="space-y-4">
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Elenco Spese</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <ScrollArea className="h-[40vh] border rounded-md">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Spesa</TableHead>
-                                <TableHead>Data</TableHead>
-                                <TableHead>Costo</TableHead>
-                                {user?.role === 'owner' && <TableHead className="text-right">Azioni</TableHead>}
+                                    </TableCell>
+                                )}
                               </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {loading ? (
-                                [...Array(5)].map((_, i) => (
-                                  <TableRow key={i}>
-                                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                                    <TableCell><Skeleton className="h-5 w-20" /></TableCell>
-                                    <TableCell><Skeleton className="h-5 w-16" /></TableCell>
-                                    {user?.role === 'owner' && <TableCell><Skeleton className="h-8 w-8 ml-auto" /></TableCell>}
-                                  </TableRow>
-                                ))
-                              ) : expenses.length > 0 ? (
-                                expenses.map((expense) => (
-                                  <TableRow key={expense.id}>
-                                    <TableCell className="font-medium">{expense.name}</TableCell>
-                                    <TableCell>{format(new Date(expense.date), 'dd MMM yyyy', { locale: it })}</TableCell>
-                                    <TableCell>€{expense.cost.toFixed(2)}</TableCell>
-                                    {user?.role === 'owner' && (
-                                        <TableCell className="text-right">
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() => setExpenseToDelete(expense)}
-                                                disabled={isProcessingDelete}
-                                            >
-                                                <Trash2 className="h-4 w-4 text-destructive" />
-                                            </Button>
-                                        </TableCell>
-                                    )}
-                                  </TableRow>
-                                ))
-                              ) : (
-                                  <TableRow>
-                                      <TableCell colSpan={user?.role === 'owner' ? 4 : 3} className="text-center text-muted-foreground h-24">Nessuna spesa registrata.</TableCell>
-                                  </TableRow>
-                              )}
-                            </TableBody>
-                          </Table>
-                        </ScrollArea>
-                    </CardContent>
-                </Card>
-            </div>
+                            ))
+                          ) : (
+                              <TableRow>
+                                  <TableCell colSpan={user?.role === 'owner' ? 4 : 3} className="text-center text-muted-foreground h-24">Nessuna spesa registrata.</TableCell>
+                              </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
+                </CardContent>
+            </Card>
+            
+            <Card>
+                <CardHeader>
+                    <CardTitle>Obiettivi</CardTitle>
+                    <CardDescription>Monitora i prossimi traguardi della palestra.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {loading ? (
+                         [...Array(2)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)
+                    ) : activeGoals.length > 0 ? (
+                       activeGoals.map((goal) => (
+                        <div key={goal.id}>
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-sm font-medium">{goal.name}</span>
+                                {user?.role === 'owner' && (
+                                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setGoalToDelete(goal)}>
+                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                )}
+                            </div>
+                            <Progress value={(bankTotal / goal.cost) * 100} />
+                            <p className="text-xs text-muted-foreground text-right mt-1">€{Math.min(bankTotal, goal.cost).toFixed(0)} / €{goal.cost.toFixed(0)}</p>
+                        </div>
+                       ))
+                    ) : (
+                        <p className="text-sm text-center text-muted-foreground py-4">Nessun obiettivo attivo al momento.</p>
+                    )}
+                </CardContent>
+            </Card>
           </div>
           {user?.role === 'owner' && (
             <DialogFooter className="sm:justify-between pt-4">
