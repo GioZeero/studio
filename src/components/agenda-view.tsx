@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -177,6 +178,7 @@ export default function AgendaView() {
 
       try {
         await runTransaction(db, async (transaction) => {
+          // 1. First, read the meta document to check the last reset week.
           const metaDoc = await transaction.get(metaRef);
           const lastResetWeekId = metaDoc.exists() ? metaDoc.data().lastResetWeekId : null;
 
@@ -184,12 +186,15 @@ export default function AgendaView() {
             console.log(`New week detected (current: ${currentWeekId}, last: ${lastResetWeekId}). Performing weekly schedule reset.`);
             
             const days: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+            const dayRefs = days.map(day => doc(db, 'schedule', day));
             
-            for (const day of days) {
-              const dayRef = doc(db, 'schedule', day);
-              const dayDoc = await transaction.get(dayRef);
+            // 2. Perform all reads for the schedule documents.
+            const dayDocs = await Promise.all(dayRefs.map(ref => transaction.get(ref)));
+
+            // 3. Now, perform all write operations.
+            for (const dayDoc of dayDocs) {
               if (dayDoc.exists()) {
-                transaction.update(dayRef, { morning: [], afternoon: [], isOpen: false });
+                transaction.update(dayDoc.ref, { morning: [], afternoon: [], isOpen: false });
               }
             }
 
@@ -197,7 +202,6 @@ export default function AgendaView() {
             console.log(`Weekly reset successful. New week ID: ${currentWeekId}`);
           }
         });
-        localStorage.removeItem('lastResetWeekId');
       } catch (error) {
         console.error("Error during weekly reset transaction:", error);
       }
