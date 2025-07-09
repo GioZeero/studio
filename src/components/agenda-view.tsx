@@ -162,34 +162,45 @@ export default function AgendaView() {
     if (!user) return;
 
     const performWeeklyReset = async () => {
-        if (user.role !== 'owner') return;
+      if (user.role !== 'owner' || !db) return;
 
-        const now = new Date();
-        const year = now.getFullYear();
-        const dayOfYear = Math.floor((now.getTime() - new Date(year, 0, 0).getTime()) / (1000 * 60 * 60 * 24));
-        const weekNumber = Math.ceil((dayOfYear + new Date(year, 0, 1).getDay() + 1) / 7);
-        const currentWeekId = `${year}-W${weekNumber}`;
-        const lastResetWeekId = localStorage.getItem('lastResetWeekId');
-        
-        if (currentWeekId !== lastResetWeekId) {
-            console.log(`New week detected (${currentWeekId}). Performing weekly schedule reset...`);
-            if (!db) return;
-            try {
-                const batch = writeBatch(db);
-                const days: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
-                
-                days.forEach(day => {
-                    const dayRef = doc(db, 'schedule', day);
-                    batch.update(dayRef, { morning: [], afternoon: [], isOpen: false });
-                });
+      const getWeekIdForDate = (date: Date): string => {
+        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+        d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+        const weekNumber = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+        return `${d.getUTCFullYear()}-W${weekNumber}`;
+      };
 
-                await batch.commit();
-                localStorage.setItem('lastResetWeekId', currentWeekId);
-                console.log('Weekly reset successful.');
-            } catch (error) {
-                 console.error("Error during weekly reset:", error);
+      const currentWeekId = getWeekIdForDate(new Date());
+      const metaRef = doc(db, 'app_meta', 'schedule_state');
+
+      try {
+        await runTransaction(db, async (transaction) => {
+          const metaDoc = await transaction.get(metaRef);
+          const lastResetWeekId = metaDoc.exists() ? metaDoc.data().lastResetWeekId : null;
+
+          if (currentWeekId !== lastResetWeekId) {
+            console.log(`New week detected (current: ${currentWeekId}, last: ${lastResetWeekId}). Performing weekly schedule reset.`);
+            
+            const days: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+            
+            for (const day of days) {
+              const dayRef = doc(db, 'schedule', day);
+              const dayDoc = await transaction.get(dayRef);
+              if (dayDoc.exists()) {
+                transaction.update(dayRef, { morning: [], afternoon: [], isOpen: false });
+              }
             }
-        }
+
+            transaction.set(metaRef, { lastResetWeekId: currentWeekId });
+            console.log(`Weekly reset successful. New week ID: ${currentWeekId}`);
+          }
+        });
+        localStorage.removeItem('lastResetWeekId');
+      } catch (error) {
+        console.error("Error during weekly reset transaction:", error);
+      }
     };
     
     setLoading(true);
