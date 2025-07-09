@@ -16,13 +16,13 @@ service cloud.firestore {
     match /bank/{document} {
       allow read, write: if true;
     }
-    
-    // Allow read/write access to app metadata
-    match /app_meta/{document} {
-      allow read, write: if true;
+
+    // Allow read/write access to app_meta
+    match /app_meta/{docId} {
+        allow read, write: if true;
     }
 
-    // Allow read/write access to expenses
+    // Allow read/write access to expenses documents
     match /expenses/{expenseId} {
       allow read, write: if true;
     }
