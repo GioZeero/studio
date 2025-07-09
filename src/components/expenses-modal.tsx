@@ -34,7 +34,7 @@ import { AddExpenseModal } from './add-expense-modal';
 import { AddGoalModal } from './add-goal-modal';
 import type { User, Expense, Goal } from '@/lib/types';
 import { db } from '@/lib/firebase';
-import { collection, query, getDocs, orderBy, runTransaction, doc, writeBatch, deleteDoc } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, runTransaction, doc, writeBatch, deleteDoc, getDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
