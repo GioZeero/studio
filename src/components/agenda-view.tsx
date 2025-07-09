@@ -414,6 +414,12 @@ export default function AgendaView() {
 
   const renderSlot = (slot: Slot) => {
     if (user.role === 'owner') {
+      const attendees = [
+        ...(slot.createdBy ? [slot.createdBy] : []),
+        ...slot.bookedBy,
+      ];
+      const uniqueAttendees = [...new Set(attendees)];
+
       return (
         <Popover key={slot.id}>
           <PopoverTrigger asChild>
@@ -433,10 +439,10 @@ export default function AgendaView() {
           <PopoverContent className="w-auto p-4">
             <div className="space-y-2 text-sm">
                 <p className="font-semibold text-base mb-2">Persone presenti</p>
-                {slot.bookedBy.length > 0 ? (
+                {uniqueAttendees.length > 0 ? (
                     <div className="max-h-32 overflow-y-auto pr-2">
                         <ul className="list-disc list-inside space-y-1.5">
-                            {slot.bookedBy.map((name, index) => <li key={index}>{name}</li>)}
+                            {uniqueAttendees.map((name, index) => <li key={index}>{name}</li>)}
                         </ul>
                     </div>
                 ) : (

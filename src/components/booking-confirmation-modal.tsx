@@ -29,6 +29,13 @@ export function BookingConfirmationModal({ isOpen, onOpenChange, slot, user, onC
   const handleConfirm = () => {
     onConfirm(slot);
   };
+  
+  const attendees = [
+    ...(slot.createdBy ? [slot.createdBy] : []),
+    ...slot.bookedBy,
+  ];
+  const uniqueAttendees = [...new Set(attendees)];
+
 
   return (
     <Dialog open={isOpen} onOpenChange={isLoading ? () => {} : onOpenChange}>
@@ -42,15 +49,16 @@ export function BookingConfirmationModal({ isOpen, onOpenChange, slot, user, onC
 
         <div className="space-y-4 py-4">
           <div className="text-sm">
-            <p className="font-semibold">Dettagli Orario</p>
-            <p className="text-muted-foreground">Creato da: {slot.createdBy || 'N/A'}</p>
-          </div>
-          
-          <div className="text-sm">
-             <p className="font-semibold">Persone Prenotate ({slot.bookedBy.length})</p>
-            {slot.bookedBy.length > 0 ? (
+             <p className="font-semibold">Persone Presenti ({uniqueAttendees.length})</p>
+            {uniqueAttendees.length > 0 ? (
                 <div className="text-muted-foreground max-h-20 overflow-y-auto pr-2 space-y-1 mt-1">
-                  {slot.bookedBy.map((name, i) => <div key={i}>{name}{name === user.name && ' (Tu)'}</div>)}
+                  {uniqueAttendees.map((name, i) => (
+                    <div key={i}>
+                      {name}
+                      {name === user.name && ' (Tu)'}
+                      {name === slot.createdBy && name !== user.name && ' (Proprietario)'}
+                    </div>
+                  ))}
                 </div>
             ) : (
                 <p className="text-muted-foreground mt-1">Sii il primo a prenotare!</p>
