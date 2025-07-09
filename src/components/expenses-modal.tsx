@@ -175,7 +175,7 @@ export function ExpensesModal({ isOpen, onOpenChange, user }: ExpensesModalProps
             </ScrollArea>
           </div>
           {user?.role === 'owner' && (
-            <DialogFooter>
+            <DialogFooter className="sm:justify-between">
               <Button variant="outline">Aggiungi Goal</Button>
               <Button onClick={() => setAddExpenseModalOpen(true)}>
                 Aggiungi Spesa
