@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Calendar, Plus, User, Trash2, Sun, Moon, LogOut, Loader2, List, FileText, Bell, Receipt, ShieldBan } from 'lucide-react';
@@ -96,6 +96,62 @@ export default function AgendaView() {
     router.push('/');
   };
 
+  const fetchUserData = useCallback(async (name: string, role: 'owner' | 'client') => {
+    if (!db) {
+      setUser({ name, role });
+      return;
+    }
+    const usersCollection = collection(db, 'users');
+    const q = query(usersCollection, where('previousName', '==', name));
+    const renamedUserSnap = await getDocs(q);
+
+    let userData: AppUser | null = null;
+
+    if (!renamedUserSnap.empty) {
+      const renamedDoc = renamedUserSnap.docs[0];
+      userData = renamedDoc.data() as AppUser;
+      console.log("Detected name change. Updating localStorage and cleaning up Firestore.");
+      localStorage.setItem('gymUser', JSON.stringify({ name: userData.name, role: userData.role }));
+      
+      await updateDoc(renamedDoc.ref, { previousName: deleteField() });
+    } else {
+      const userRef = doc(db, 'users', name);
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+          userData = userSnap.data() as AppUser;
+      } else {
+         try {
+            console.warn(`User '${name}' found in localStorage but not in Firestore. Re-creating user.`);
+            const newUser: Omit<AppUser, 'id'> = { name, role, isBlocked: false };
+            await setDoc(userRef, newUser);
+            userData = newUser as AppUser;
+          } catch (e) {
+            console.error("Failed to re-create user in Firestore. Logging out.", e);
+            handleLogout();
+          }
+      }
+    }
+
+    if (userData) {
+      if (userData.isBlocked) {
+        setIsBlocked(true);
+      }
+      setUser(userData);
+    }
+    setCheckingAuth(false);
+  }, [router]);
+
+  const fetchData = useCallback(() => {
+    const storedUser = localStorage.getItem('gymUser');
+    if (storedUser) {
+        const { name, role } = JSON.parse(storedUser);
+        setCheckingAuth(true);
+        fetchUserData(name, role);
+    } else {
+        router.replace('/');
+    }
+  }, [fetchUserData, router]);
+
   useEffect(() => {
     const dayNames: DayOfWeek[] = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
     const todayIndex = new Date().getDay();
@@ -122,72 +178,8 @@ export default function AgendaView() {
   }, []);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('gymUser');
-    if (!storedUser) {
-      router.replace('/');
-      return;
-    }
-
-    const fetchUserData = async (name: string, role: 'owner' | 'client') => {
-      if (!db) {
-        setUser({ name, role });
-        setCheckingAuth(false);
-        return;
-      }
-      const usersCollection = collection(db, 'users');
-      const q = query(usersCollection, where('previousName', '==', name));
-      const renamedUserSnap = await getDocs(q);
-
-      if (!renamedUserSnap.empty) {
-        const renamedDoc = renamedUserSnap.docs[0];
-        const userData = renamedDoc.data() as AppUser;
-        console.log("Detected name change. Updating localStorage and cleaning up Firestore.");
-        localStorage.setItem('gymUser', JSON.stringify({ name: userData.name, role: userData.role }));
-        
-        await updateDoc(renamedDoc.ref, { previousName: deleteField() });
-        // The rest of the logic will proceed with the updated userData
-        if (userData.isBlocked) {
-            setIsBlocked(true);
-            setCheckingAuth(false);
-            setUser(userData);
-            return;
-        }
-        setUser(userData);
-      } else {
-        const userRef = doc(db, 'users', name);
-        const userSnap = await getDoc(userRef);
-        if (userSnap.exists()) {
-            const userData = userSnap.data() as AppUser;
-            if (userData.isBlocked) {
-                setIsBlocked(true);
-                setCheckingAuth(false);
-                setUser(userData);
-                return;
-            }
-            setUser(userData);
-        } else {
-           try {
-              console.warn(`User '${name}' found in localStorage but not in Firestore. Re-creating user.`);
-              const newUser: Omit<AppUser, 'id'> = { name, role, isBlocked: false };
-              await setDoc(userRef, newUser);
-              setUser(newUser as AppUser);
-            } catch (e) {
-              console.error("Failed to re-create user in Firestore. Logging out.", e);
-              handleLogout();
-            }
-        }
-      }
-
-      setCheckingAuth(false);
-    };
-
-    try {
-      const { name, role } = JSON.parse(storedUser);
-      fetchUserData(name, role);
-    } catch (e) {
-      handleLogout();
-    }
-  }, [router]);
+    fetchData();
+  }, [fetchData]);
   
   useEffect(() => {
     if (user?.role === 'client' && user.subscriptionExpiry) {
