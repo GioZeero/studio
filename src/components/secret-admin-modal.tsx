@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -25,7 +26,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Skeleton } from './ui/skeleton';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, doc, writeBatch, getDoc, runTransaction } from 'firebase/firestore';
-import type { ClientData } from '@/lib/types';
+import type { ClientData, DayOfWeek, Slot } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, ShieldCheck, ShieldX, UserCog } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
@@ -91,7 +92,7 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
                     const now = new Date();
                     if (expiryDate > now) {
                         const diffTime = expiryDate.getTime() - now.getTime();
-                        const diffDays = diffTime / (1000 * 60 * 60 * 24);
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                         const remainingMonths = Math.floor(diffDays / 30);
                         
                         if (remainingMonths > 0) {
@@ -101,11 +102,31 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
                 }
                 
                 transaction.update(userRef, { isBlocked: true, subscriptionExpiry: new Date(0).toISOString() }); // Set expiry to past
-                transaction.set(bankRef, { amount: currentAmount - amountToSubtract }, { merge: true });
+                if(amountToSubtract > 0) {
+                    transaction.set(bankRef, { amount: currentAmount - amountToSubtract }, { merge: true });
+                }
+
+                // Remove all bookings for this user
+                const days: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+                for (const day of days) {
+                    const dayRef = doc(db, 'schedule', day);
+                    const dayDoc = await transaction.get(dayRef);
+                    if (dayDoc.exists()) {
+                        const data = dayDoc.data();
+                        const cleanSlots = (slots: Slot[]) => slots.map(slot => ({
+                            ...slot,
+                            bookedBy: slot.bookedBy.filter(name => name !== client.name),
+                        }));
+
+                        const morning = cleanSlots(data.morning || []);
+                        const afternoon = cleanSlots(data.afternoon || []);
+                        transaction.update(dayRef, { morning, afternoon });
+                    }
+                }
 
                 toast({
                     title: 'Successo!',
-                    description: `${client.name} è stato bloccato. ${amountToSubtract > 0 ? `Rimborso di ${amountToSubtract}€ effettuato.` : 'Nessun rimborso applicabile.'}`,
+                    description: `${client.name} è stato bloccato. Le sue prenotazioni sono state cancellate. ${amountToSubtract > 0 ? `Rimborso di ${amountToSubtract}€ effettuato.` : ''}`,
                 });
 
             } else {
@@ -153,18 +174,39 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
 
       const batch = writeBatch(db);
       
-      const oldClientData = (await getDoc(oldDocRef)).data();
+      const oldClientDataSnap = await getDoc(oldDocRef);
+      if (!oldClientDataSnap.exists()) {
+        throw new Error("Original client not found.");
+      }
       
-      const clientData = { ...oldClientData, name: trimmedNewName, previousName: originalName };
+      const clientData = { ...oldClientDataSnap.data(), name: trimmedNewName, previousName: originalName };
 
       batch.set(newDocRef, clientData);
       batch.delete(oldDocRef);
+      
+      // Remove all bookings for the old name
+      const days: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+      for (const day of days) {
+          const dayRef = doc(db, 'schedule', day);
+          const dayDoc = await getDoc(dayRef); // Use getDoc with batch, not transaction
+          if (dayDoc.exists()) {
+              const data = dayDoc.data();
+              const cleanSlots = (slots: Slot[]) => slots.map(slot => ({
+                  ...slot,
+                  bookedBy: slot.bookedBy.filter(name => name !== originalName),
+              }));
+
+              const morning = cleanSlots(data.morning || []);
+              const afternoon = cleanSlots(data.afternoon || []);
+              batch.update(dayRef, { morning, afternoon });
+          }
+      }
 
       await batch.commit();
 
       toast({
         title: 'Successo!',
-        description: `Il nome di ${originalName} è stato cambiato in ${trimmedNewName}. La modifica sarà applicata automaticamente al prossimo accesso del cliente.`,
+        description: `Il nome di ${originalName} è stato cambiato in ${trimmedNewName}. Le sue prenotazioni sono state cancellate. La modifica sarà applicata automaticamente al prossimo accesso.`,
       });
       onClientsUpdated(); 
       fetchClients();
@@ -172,7 +214,10 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
       setNewName('');
     } catch (error) {
       console.error("Error renaming client:", error);
-      toast({ variant: 'destructive', title: 'Errore', description: 'Impossibile rinominare il cliente. Il nuovo nome potrebbe essere già in uso.' });
+      const errorMessage = (error instanceof Error && error.message.includes("New name already exists"))
+        ? 'Impossibile rinominare il cliente. Il nuovo nome è già in uso.'
+        : 'Errore durante la ridenominazione.';
+      toast({ variant: 'destructive', title: 'Errore', description: errorMessage });
     } finally {
       setIsSaving(false);
     }
@@ -216,7 +261,7 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
                     </TableCell>
                     <TableCell>
                       <Switch
-                        checked={client.isBlocked}
+                        checked={!!client.isBlocked}
                         onCheckedChange={() => handleBlockToggle(client)}
                         disabled={isSaving}
                         aria-label={`Blocca/Sblocca ${client.name}`}
@@ -251,7 +296,7 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
             <AlertDialogHeader>
                 <AlertDialogTitle>Rinomina {clientToRename?.name}</AlertDialogTitle>
                 <AlertDialogDescription>
-                    Inserisci il nuovo nome per il cliente. La modifica sarà applicata automaticamente al prossimo accesso del cliente.
+                    Inserisci il nuovo nome per il cliente. Le sue prenotazioni verranno cancellate. La modifica sarà applicata automaticamente al prossimo accesso.
                 </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="py-4">
