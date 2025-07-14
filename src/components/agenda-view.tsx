@@ -24,7 +24,7 @@ import { isPast } from 'date-fns';
 import { NotificationsModal } from './notifications-modal';
 import { BookingConfirmationModal } from './booking-confirmation-modal';
 import { ExpensesModal } from './expenses-modal';
-import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
+import { SecretAdminModal } from './secret-admin-modal';
 
 const initialScheduleData: DaySchedule[] = [
   { day: 'Lunedì', morning: [], afternoon: [], isOpen: false },
@@ -134,6 +134,12 @@ export default function AgendaView() {
 
       if (userSnap.exists()) {
         const userData = userSnap.data() as AppUser;
+        if (userData.isBlocked) {
+            localStorage.removeItem('gymUser');
+            router.replace('/');
+            return;
+        }
+        
         setUser(userData);
         if (userData.role === 'client') {
           const isExpired = !userData.subscriptionExpiry || isPast(new Date(userData.subscriptionExpiry));
@@ -144,7 +150,7 @@ export default function AgendaView() {
       } else {
         try {
           console.warn(`User '${name}' found in localStorage but not in Firestore. Re-creating user.`);
-          const newUser: Omit<AppUser, 'id'> = { name, role };
+          const newUser: Omit<AppUser, 'id'> = { name, role, isBlocked: false };
           await setDoc(userRef, newUser);
           setUser(newUser as AppUser);
         } catch (e) {
@@ -413,6 +419,8 @@ export default function AgendaView() {
   };
 
   const handleSecretClick = () => {
+    if (user?.role !== 'owner') return;
+
     const newCount = secretClickCount + 1;
     setSecretClickCount(newCount);
 
@@ -523,6 +531,7 @@ export default function AgendaView() {
                     <DeleteSlotModal isOpen={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen} schedule={schedule} onDeleteSlots={handleDeleteSlots} />
                     <ClientListModal isOpen={isClientListModalOpen} onOpenChange={setClientListModalOpen} />
                     <NotificationsModal isOpen={isNotificationsModalOpen} onOpenChange={setNotificationsModalOpen} />
+                    <SecretAdminModal isOpen={isSecretMenuOpen} onOpenChange={setSecretMenuOpen} />
                 </>
             )}
             {user.role === 'client' && (
@@ -540,19 +549,6 @@ export default function AgendaView() {
                 isLoading={!!bookingSlotId}
             />
             <ExpensesModal isOpen={isExpensesModalOpen} onOpenChange={setExpensesModalOpen} user={user} />
-             <AlertDialog open={isSecretMenuOpen} onOpenChange={setSecretMenuOpen}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>🥚 Menu Segreto Attivato! 🥚</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            Hai trovato l'easter egg!
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogAction onClick={() => setSecretMenuOpen(false)}>Chiudi</AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
         </>
       )}
       

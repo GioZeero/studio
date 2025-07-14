@@ -7,12 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Dumbbell, Loader2 } from 'lucide-react';
+import { Dumbbell, Loader2, ShieldBan } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 export default function Home() {
   const [role, setRole] = useState<'owner' | 'client'>('client');
@@ -20,6 +21,7 @@ export default function Home() {
   const [hasPaid, setHasPaid] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -45,6 +47,13 @@ export default function Home() {
 
       if (userSnap.exists()) {
         const existingUser = userSnap.data();
+
+        if (existingUser.isBlocked) {
+            setIsBlocked(true);
+            setIsSubmitting(false);
+            return;
+        }
+
         if (existingUser.role !== role) {
           toast({
             variant: "destructive",
@@ -58,9 +67,10 @@ export default function Home() {
         router.push(`/agenda`);
 
       } else {
-        const newUser: { name: string; role: 'owner' | 'client'; subscriptionExpiry?: string } = {
+        const newUser: { name: string; role: 'owner' | 'client'; subscriptionExpiry?: string, isBlocked?: boolean } = {
           name: trimmedName,
           role: role,
+          isBlocked: false,
         };
 
         if (role === 'client' && hasPaid) {
@@ -122,6 +132,7 @@ export default function Home() {
   }
 
   return (
+    <>
     <main className="flex min-h-screen flex-col items-center justify-center bg-background p-8">
       <Card className="w-full max-w-md shadow-2xl animate-fade-in-up">
         <CardHeader className="text-center">
@@ -176,5 +187,22 @@ export default function Home() {
         </CardContent>
       </Card>
     </main>
+    <AlertDialog open={isBlocked} onOpenChange={setIsBlocked}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                    <ShieldBan className="h-6 w-6 text-destructive" />
+                    Account Bloccato
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                    Il tuo account è stato bloccato dal proprietario della palestra. Contattalo per maggiori informazioni.
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogAction onClick={() => setIsBlocked(false)}>Ho capito</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

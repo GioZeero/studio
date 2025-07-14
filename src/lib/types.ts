@@ -17,7 +17,8 @@ export interface DaySchedule {
 export interface User {
   name: string;
   role: 'owner' | 'client';
-  subscriptionExpiry?: string; 
+  subscriptionExpiry?: string;
+  isBlocked?: boolean;
 }
 
 export interface ClientData extends User {
