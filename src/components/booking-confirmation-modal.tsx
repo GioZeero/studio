@@ -28,7 +28,9 @@ export function BookingConfirmationModal({ isOpen, onOpenChange, slot, user, onC
   const isBookedByUser = slot.bookedBy.includes(user.name);
 
   const handleConfirm = () => {
-    onConfirm(slot);
+    if (!isLoading) {
+      onConfirm(slot);
+    }
   };
   
   const attendees = [
