@@ -56,6 +56,15 @@ export default function Home() {
           setIsSubmitting(false);
           return;
         }
+        if (existingUser.isBlocked) {
+            toast({
+                variant: "destructive",
+                title: "Account Bloccato",
+                description: "Questo account è stato bloccato. Contatta il proprietario.",
+            });
+            setIsSubmitting(false);
+            return;
+        }
       } else {
         const newUser: { name: string; role: 'owner' | 'client'; subscriptionExpiry?: string, isBlocked?: boolean } = {
           name: trimmedName,

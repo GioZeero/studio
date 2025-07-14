@@ -92,10 +92,10 @@ export default function AgendaView() {
   const router = useRouter();
   const { setTheme } = useTheme();
   
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     localStorage.removeItem('gymUser');
-    router.push('/');
-  };
+    router.replace('/');
+  }, [router]);
 
   const fetchUserData = useCallback(async (name: string, role: 'owner' | 'client') => {
     if (!db) {
@@ -124,15 +124,10 @@ export default function AgendaView() {
       if (userSnap.exists()) {
           userData = { id: userSnap.id, ...userSnap.data() } as AppUser & { id: string };
       } else {
-         try {
-            console.warn(`User '${name}' found in localStorage but not in Firestore. Re-creating user.`);
-            const newUser: Omit<AppUser, 'id'> = { name, role, isBlocked: false };
-            await setDoc(userRef, newUser);
-            userData = { id: name, ...newUser } as AppUser & { id: string };
-          } catch (e) {
-            console.error("Failed to re-create user in Firestore. Logging out.", e);
-            handleLogout();
-          }
+          // User exists in localStorage but not in DB (maybe deleted)
+          console.warn(`User '${name}' not found in Firestore. Logging out.`);
+          handleLogout();
+          return;
       }
     }
 
@@ -142,9 +137,11 @@ export default function AgendaView() {
       } else {
         setUser(userData);
       }
+    } else {
+        handleLogout();
     }
     setCheckingAuth(false);
-  }, [router]);
+  }, [handleLogout]);
 
   const fetchData = useCallback(() => {
     const storedUser = localStorage.getItem('gymUser');
@@ -328,6 +325,8 @@ export default function AgendaView() {
           
           const cleanSlots = (slots: Slot[]) => {
               return slots.map(slot => {
+                  if (!slot.bookedBy || slot.bookedBy.length === 0) return slot;
+                  
                   const originalBookedBy = slot.bookedBy;
                   const cleanedBookedBy = originalBookedBy.filter(name => validUserNames.has(name));
                   
@@ -362,7 +361,9 @@ export default function AgendaView() {
       }
     };
     
-    cleanOrphanBookings(schedule);
+    if (user?.role === 'owner' && schedule.length > 0) {
+        cleanOrphanBookings(schedule);
+    }
   }, [schedule, user]);
 
   const handleSubscriptionUpdate = (newExpiry: string) => {
@@ -548,14 +549,13 @@ export default function AgendaView() {
                     Non puoi accedere o prenotare nuovi orari.
                 </AlertDialogDescription>
             </AlertDialogHeader>
+            <AlertDialogAction onClick={handleLogout}>Esci</AlertDialogAction>
         </AlertDialogContent>
     </AlertDialog>
     );
   }
 
   if (!user) {
-    // This case should ideally not be reached if routing is correct,
-    // but it's a safe fallback.
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
             <Loader2 className="h-16 w-16 animate-spin text-primary"/>
