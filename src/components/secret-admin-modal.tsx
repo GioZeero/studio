@@ -119,7 +119,7 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
 
       toast({
         title: 'Successo!',
-        description: `Il nome di ${originalName} è stato cambiato in ${trimmedNewName}. Il cliente dovrà fare il login con il nuovo nome per completare l'aggiornamento.`,
+        description: `Il nome di ${originalName} è stato cambiato in ${trimmedNewName}. La modifica sarà applicata automaticamente al prossimo accesso del cliente.`,
       });
       onClientsUpdated(); 
       fetchClients();
@@ -206,7 +206,7 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
             <AlertDialogHeader>
                 <AlertDialogTitle>Rinomina {clientToRename?.name}</AlertDialogTitle>
                 <AlertDialogDescription>
-                    Inserisci il nuovo nome per il cliente. Questa operazione è permanente e richiederà al cliente di effettuare nuovamente il login con il nuovo nome per vederlo aggiornato.
+                    Inserisci il nuovo nome per il cliente. Questa operazione è permanente e si rifletterà automaticamente per il cliente al suo prossimo accesso.
                 </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="py-4">
