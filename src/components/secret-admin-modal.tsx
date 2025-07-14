@@ -81,7 +81,14 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
 
     try {
         await runTransaction(db, async (transaction) => {
+            // --- 1. READS ---
             const bankSnap = await transaction.get(bankRef);
+            
+            const days: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+            const dayRefs = days.map(day => doc(db, 'schedule', day));
+            const dayDocs = await Promise.all(dayRefs.map(dayRef => transaction.get(dayRef)));
+
+            // --- 2. LOGIC ---
             let currentAmount = bankSnap.exists() ? bankSnap.data().amount : 0;
             
             if (isBlocking) {
@@ -101,16 +108,14 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
                     }
                 }
                 
-                transaction.update(userRef, { isBlocked: true, subscriptionExpiry: new Date(0).toISOString() }); // Set expiry to past
+                // --- 3. WRITES ---
+                transaction.update(userRef, { isBlocked: true, subscriptionExpiry: new Date(0).toISOString() });
                 if(amountToSubtract > 0) {
                     transaction.set(bankRef, { amount: currentAmount - amountToSubtract }, { merge: true });
                 }
 
                 // Remove all bookings for this user
-                const days: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
-                for (const day of days) {
-                    const dayRef = doc(db, 'schedule', day);
-                    const dayDoc = await transaction.get(dayRef);
+                dayDocs.forEach(dayDoc => {
                     if (dayDoc.exists()) {
                         const data = dayDoc.data();
                         const cleanSlots = (slots: Slot[]) => slots.map(slot => ({
@@ -120,9 +125,9 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
 
                         const morning = cleanSlots(data.morning || []);
                         const afternoon = cleanSlots(data.afternoon || []);
-                        transaction.update(dayRef, { morning, afternoon });
+                        transaction.update(dayDoc.ref, { morning, afternoon });
                     }
-                }
+                });
 
                 toast({
                     title: 'Successo!',
@@ -132,9 +137,10 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
             } else {
                 // Logic for UNBLOCKING a user (simulates new payment)
                 const newExpiryDate = new Date();
-                newExpiryDate.setMonth(newExpiryDate.getMonth() + 1, 0); // Set to end of current month
+                newExpiryDate.setMonth(newExpiryDate.getMonth() + 1, 0);
                 newExpiryDate.setHours(23, 59, 59, 999);
                 
+                // --- 3. WRITES ---
                 transaction.update(userRef, { isBlocked: false, subscriptionExpiry: newExpiryDate.toISOString() });
                 transaction.set(bankRef, { amount: currentAmount + 25 }, { merge: true });
 
@@ -145,7 +151,6 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
             }
         });
 
-        // Update local state after successful transaction
         fetchClients();
 
     } catch (error) {
@@ -164,6 +169,9 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
     const trimmedNewName = newName.trim();
 
     try {
+      // Use a write batch for this as it's simpler than a transaction when reads aren't dependent on writes.
+      const batch = writeBatch(db);
+      
       const oldDocRef = doc(db, 'users', originalName);
       const newDocRef = doc(db, 'users', trimmedNewName);
       
@@ -171,8 +179,6 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
       if (newDocSnap.exists()) {
         throw new Error("New name already exists.");
       }
-
-      const batch = writeBatch(db);
       
       const oldClientDataSnap = await getDoc(oldDocRef);
       if (!oldClientDataSnap.exists()) {
@@ -184,11 +190,10 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
       batch.set(newDocRef, clientData);
       batch.delete(oldDocRef);
       
-      // Remove all bookings for the old name
       const days: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
       for (const day of days) {
           const dayRef = doc(db, 'schedule', day);
-          const dayDoc = await getDoc(dayRef); // Use getDoc with batch, not transaction
+          const dayDoc = await getDoc(dayRef);
           if (dayDoc.exists()) {
               const data = dayDoc.data();
               const cleanSlots = (slots: Slot[]) => slots.map(slot => ({
@@ -206,7 +211,7 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
 
       toast({
         title: 'Successo!',
-        description: `Il nome di ${originalName} è stato cambiato in ${trimmedNewName}. Le sue prenotazioni sono state cancellate. La modifica sarà applicata automaticamente al prossimo accesso.`,
+        description: `Il nome di ${originalName} è stato cambiato in ${trimmedNewName}. Le sue prenotazioni sono state cancellate. La modifica sarà applicata automaticamente al prossimo accesso del cliente.`,
       });
       onClientsUpdated(); 
       fetchClients();
@@ -296,7 +301,7 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
             <AlertDialogHeader>
                 <AlertDialogTitle>Rinomina {clientToRename?.name}</AlertDialogTitle>
                 <AlertDialogDescription>
-                    Inserisci il nuovo nome per il cliente. Le sue prenotazioni verranno cancellate. La modifica sarà applicata automaticamente al prossimo accesso.
+                    Inserisci il nuovo nome per il cliente. Le sue prenotazioni verranno cancellate. La modifica sarà applicata automaticamente al prossimo accesso del cliente.
                 </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="py-4">
