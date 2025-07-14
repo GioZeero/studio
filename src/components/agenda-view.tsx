@@ -103,32 +103,16 @@ export default function AgendaView() {
       setCheckingAuth(false);
       return;
     }
-    const usersCollection = collection(db, 'users');
-    const q = query(usersCollection, where('previousName', '==', name));
-    const renamedUserSnap = await getDocs(q);
+    const userRef = doc(db, 'users', name);
+    const userSnap = await getDoc(userRef);
 
     let userData: AppUser | null = null;
-    let userRef;
-
-    if (!renamedUserSnap.empty) {
-      const renamedDoc = renamedUserSnap.docs[0];
-      userData = { id: renamedDoc.id, ...renamedDoc.data() } as AppUser & { id: string };
-      userRef = renamedDoc.ref;
-      console.log("Detected name change. Updating localStorage and cleaning up Firestore.");
-      localStorage.setItem('gymUser', JSON.stringify({ name: userData.name, role: userData.role }));
-      
-      await updateDoc(userRef, { previousName: deleteField() });
+    if (userSnap.exists()) {
+        userData = { id: userSnap.id, ...userSnap.data() } as AppUser & { id: string };
     } else {
-      userRef = doc(db, 'users', name);
-      const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) {
-          userData = { id: userSnap.id, ...userSnap.data() } as AppUser & { id: string };
-      } else {
-          // User exists in localStorage but not in DB (maybe deleted)
-          console.warn(`User '${name}' not found in Firestore. Logging out.`);
-          handleLogout();
-          return;
-      }
+        console.warn(`User '${name}' not found in Firestore during auth check. Logging out.`);
+        handleLogout();
+        return;
     }
 
     if (userData) {
@@ -325,9 +309,9 @@ export default function AgendaView() {
             let periodChanged = false;
             const updatedSlots = slots.map(slot => {
               if (!slot.bookedBy || slot.bookedBy.length === 0) {
-                return slot;
+                return slot; // No bookings to clean
               }
-  
+              
               const originalBookedBy = slot.bookedBy;
               const cleanedBookedBy = originalBookedBy.filter(name => validUserNames.has(name));
   
@@ -338,7 +322,7 @@ export default function AgendaView() {
                 return { ...slot, bookedBy: cleanedBookedBy };
               }
   
-              return slot;
+              return slot; // Return original slot if no changes
             });
             return { updatedSlots, periodChanged };
           };
@@ -783,3 +767,5 @@ export default function AgendaView() {
     </div>
   );
 }
+
+    
