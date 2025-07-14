@@ -24,7 +24,7 @@ import { Label } from './ui/label';
 import { ScrollArea } from './ui/scroll-area';
 import { Skeleton } from './ui/skeleton';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, writeBatch, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, writeBatch, updateDoc, getDoc, runTransaction, increment } from 'firebase/firestore';
 import type { ClientData } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, ShieldCheck, ShieldX, UserCog } from 'lucide-react';
@@ -72,23 +72,38 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
 
   const handleBlockToggle = async (client: ClientData) => {
     if (!db || isSaving) return;
-    
+
     setIsSaving(true);
+    const userRef = doc(db, 'users', client.id);
+    const isBlocking = !client.isBlocked;
+
     try {
-      const userRef = doc(db, 'users', client.id);
-      await updateDoc(userRef, { isBlocked: !client.isBlocked });
-      setClients(clients.map(c => c.id === client.id ? { ...c, isBlocked: !c.isBlocked } : c));
-      toast({
-        title: 'Successo!',
-        description: `${client.name} è stato ${!client.isBlocked ? 'bloccato' : 'sbloccato'}.`,
-      });
+        if (isBlocking) {
+            // If blocking, run a transaction to block user and subtract from bank
+            const bankRef = doc(db, 'bank', 'total');
+            await runTransaction(db, async (transaction) => {
+                transaction.update(userRef, { isBlocked: true });
+                transaction.set(bankRef, { amount: increment(-25) }, { merge: true });
+            });
+        } else {
+            // If unblocking, just update the user's status
+            await updateDoc(userRef, { isBlocked: false });
+        }
+        
+        // Update local state
+        setClients(clients.map(c => c.id === client.id ? { ...c, isBlocked: isBlocking } : c));
+        
+        toast({
+            title: 'Successo!',
+            description: `${client.name} è stato ${isBlocking ? 'bloccato' : 'sbloccato'}. ${isBlocking ? '25€ sono stati stornati dalla cassa.' : ''}`,
+        });
     } catch (error) {
-      console.error("Error toggling block status:", error);
-      toast({ variant: 'destructive', title: 'Errore', description: 'Impossibile aggiornare lo stato.' });
+        console.error("Error toggling block status:", error);
+        toast({ variant: 'destructive', title: 'Errore', description: 'Impossibile aggiornare lo stato.' });
     } finally {
-      setIsSaving(false);
+        setIsSaving(false);
     }
-  };
+};
 
   const handleRename = async () => {
     if (!db || !clientToRename || !newName.trim() || isSaving) return;
