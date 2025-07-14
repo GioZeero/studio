@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Calendar, Plus, User, Trash2, Sun, Moon, LogOut, Loader2, List, FileText, Bell, Receipt } from 'lucide-react';
+import { Calendar, Plus, User, Trash2, Sun, Moon, LogOut, Loader2, List, FileText, Bell, Receipt, ShieldBan } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AddSlotModal } from './add-slot-modal';
@@ -68,6 +68,7 @@ function AgendaViewLoader() {
 export default function AgendaView() {
   const [user, setUser] = useState<AppUser | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [isBlocked, setIsBlocked] = useState(false);
   const [schedule, setSchedule] = useState<DaySchedule[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -90,6 +91,11 @@ export default function AgendaView() {
   const router = useRouter();
   const { setTheme } = useTheme();
   
+  const handleLogout = () => {
+    localStorage.removeItem('gymUser');
+    router.push('/');
+  };
+
   useEffect(() => {
     const dayNames: DayOfWeek[] = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
     const todayIndex = new Date().getDay();
@@ -131,12 +137,12 @@ export default function AgendaView() {
       const userRef = doc(db, 'users', name);
       const userSnap = await getDoc(userRef);
 
-
       if (userSnap.exists()) {
         const userData = userSnap.data() as AppUser;
         if (userData.isBlocked) {
-            localStorage.removeItem('gymUser');
-            router.replace('/');
+            setIsBlocked(true);
+            setCheckingAuth(false);
+            setUser(userData);
             return;
         }
         
@@ -155,8 +161,7 @@ export default function AgendaView() {
           setUser(newUser as AppUser);
         } catch (e) {
           console.error("Failed to re-create user in Firestore. Logging out.", e);
-          localStorage.removeItem('gymUser');
-          router.replace('/');
+          handleLogout();
         }
       }
       setCheckingAuth(false);
@@ -166,13 +171,12 @@ export default function AgendaView() {
       const { name, role } = JSON.parse(storedUser);
       fetchUserData(name, role);
     } catch (e) {
-      localStorage.removeItem('gymUser');
-      router.replace('/');
+      handleLogout();
     }
   }, [router]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || isBlocked) return;
 
     const performWeeklyReset = async () => {
       if (user.role !== 'owner' || !db) return;
@@ -272,12 +276,7 @@ export default function AgendaView() {
         return () => unsubscribe();
     });
 
-  }, [user]);
-
-  const handleLogout = () => {
-    localStorage.removeItem('gymUser');
-    router.push('/');
-  };
+  }, [user, isBlocked]);
 
   const handleSubscriptionUpdate = (newExpiry: string) => {
     if (user) {
@@ -444,6 +443,31 @@ export default function AgendaView() {
         <main className="p-4 md:p-6 lg:p-8">
           <AgendaViewLoader />
         </main>
+      </div>
+    );
+  }
+  
+  if (isBlocked) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
+        <Card className="w-full max-w-md text-center">
+            <CardHeader>
+                <div className="mx-auto bg-destructive text-destructive-foreground rounded-full p-3 w-fit mb-4">
+                    <ShieldBan className="h-10 w-10" />
+                </div>
+                <CardTitle>Account Bloccato</CardTitle>
+                <CardDescription>
+                    Il tuo account è stato bloccato dal proprietario della palestra.
+                    Contattalo per maggiori informazioni.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <Button onClick={handleLogout}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Esci
+                </Button>
+            </CardContent>
+        </Card>
       </div>
     );
   }

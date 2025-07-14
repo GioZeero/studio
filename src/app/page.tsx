@@ -13,7 +13,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 export default function Home() {
   const [role, setRole] = useState<'owner' | 'client'>('client');
@@ -21,7 +20,6 @@ export default function Home() {
   const [hasPaid, setHasPaid] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isBlocked, setIsBlocked] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -47,12 +45,6 @@ export default function Home() {
 
       if (userSnap.exists()) {
         const existingUser = userSnap.data();
-
-        if (existingUser.isBlocked) {
-            setIsBlocked(true);
-            setIsSubmitting(false);
-            return;
-        }
 
         if (existingUser.role !== role) {
           toast({
@@ -187,22 +179,6 @@ export default function Home() {
         </CardContent>
       </Card>
     </main>
-    <AlertDialog open={isBlocked} onOpenChange={setIsBlocked}>
-        <AlertDialogContent>
-            <AlertDialogHeader>
-                <AlertDialogTitle className="flex items-center gap-2">
-                    <ShieldBan className="h-6 w-6 text-destructive" />
-                    Account Bloccato
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                    Il tuo account è stato bloccato dal proprietario della palestra. Contattalo per maggiori informazioni.
-                </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-                <AlertDialogAction onClick={() => setIsBlocked(false)}>Ho capito</AlertDialogAction>
-            </AlertDialogFooter>
-        </AlertDialogContent>
-    </AlertDialog>
     </>
   );
 }
