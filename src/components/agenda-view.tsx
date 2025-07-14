@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Calendar, Plus, User, Trash2, Sun, Moon, LogOut, Loader2, List, FileText, Bell, Receipt, ShieldBan } from 'lucide-react';
+import { Calendar, Plus, User, Trash2, Sun, Moon, LogOut, Loader2, List, FileText, Bell, Receipt, ShieldBan, ShieldX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AddSlotModal } from './add-slot-modal';
@@ -25,6 +25,7 @@ import { NotificationsModal } from './notifications-modal';
 import { BookingConfirmationModal } from './booking-confirmation-modal';
 import { ExpensesModal } from './expenses-modal';
 import { SecretAdminModal } from './secret-admin-modal';
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogAction } from './ui/alert-dialog';
 
 const initialScheduleData: DaySchedule[] = [
   { day: 'Lunedì', morning: [], afternoon: [], isOpen: false },
@@ -243,13 +244,13 @@ export default function AgendaView() {
     
     const cleanOrphanBookings = async (currentSchedule: DaySchedule[]) => {
       if (user.role !== 'owner' || !db || isCleanupDone || currentSchedule.length === 0) return;
-      isCleanupDone = true; // Prevent multiple runs
+      isCleanupDone = true; 
       
       console.log("Owner detected. Running orphan bookings cleanup...");
 
       try {
         const usersSnapshot = await getDocs(collection(db, 'users'));
-        // Get names of users who are not blocked
+        
         const validUserNames = new Set(
             usersSnapshot.docs
                 .map(d => d.data() as AppUser)
@@ -266,7 +267,6 @@ export default function AgendaView() {
           const cleanSlots = (slots: Slot[]) => {
               return slots.map(slot => {
                   const originalBookedBy = slot.bookedBy;
-                  // Filter out users who are not in the valid (i.e., not blocked) list
                   const cleanedBookedBy = originalBookedBy.filter(name => validUserNames.has(name));
                   
                   if (originalBookedBy.length !== cleanedBookedBy.length) {
@@ -281,8 +281,6 @@ export default function AgendaView() {
           const updatedMorning = cleanSlots(daySchedule.morning);
           const updatedAfternoon = cleanSlots(daySchedule.afternoon);
 
-          // We only write to the batch if there's a change for that day.
-          // This check prevents unnecessary writes.
           const morningChanged = JSON.stringify(daySchedule.morning) !== JSON.stringify(updatedMorning);
           const afternoonChanged = JSON.stringify(daySchedule.afternoon) !== JSON.stringify(updatedAfternoon);
 
@@ -350,7 +348,6 @@ export default function AgendaView() {
             
             setSchedule(scheduleData as DaySchedule[]);
             
-            // Run cleanup after schedule is loaded for the first time
             if (user.role === 'owner') {
               cleanOrphanBookings(scheduleData);
             }
@@ -518,7 +515,7 @@ export default function AgendaView() {
   };
 
 
-  if (checkingAuth || !user) {
+  if (checkingAuth) {
     return (
       <div className="min-h-screen bg-background">
         <header className="p-4 md:p-6 flex justify-between items-center border-b sticky top-0 bg-background/80 backdrop-blur-sm z-10">
@@ -537,19 +534,30 @@ export default function AgendaView() {
   
   if (isBlocked) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
-        <Card className="w-full max-w-md text-center">
-            <CardHeader>
+       <AlertDialog open={true}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
                 <div className="mx-auto bg-destructive text-destructive-foreground rounded-full p-3 w-fit mb-4">
-                    <ShieldBan className="h-10 w-10" />
+                    <ShieldX className="h-10 w-10" />
                 </div>
-                <CardTitle>Account Bloccato</CardTitle>
-                <CardDescription>
+                <AlertDialogTitle className="text-center">Account Bloccato</AlertDialogTitle>
+                <AlertDialogDescription className="text-center">
                     Il tuo account è stato bloccato dal proprietario della palestra.
-                </CardDescription>
-            </CardHeader>
-        </Card>
-      </div>
+                    Non puoi accedere o prenotare nuovi orari.
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+        </AlertDialogContent>
+    </AlertDialog>
+    );
+  }
+
+  if (!user) {
+    // This case should ideally not be reached if routing is correct,
+    // but it's a safe fallback.
+    return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
+            <Loader2 className="h-16 w-16 animate-spin text-primary"/>
+        </div>
     );
   }
 
@@ -558,14 +566,10 @@ export default function AgendaView() {
     const isOwner = user.role === 'owner';
     const isProcessing = bookingSlotId === slot.id;
 
-    // The owner who created the slot is always "present" in a sense.
-    // We check if their name is in `bookedBy` for explicit booking.
     const isOwnerPresent = isOwner && isBookedByUser;
 
     const attendees = [...new Set([...(slot.createdBy ? [slot.createdBy] : []),...slot.bookedBy,])];
     
-    // For owners, if they are not the creator of the slot, they can book.
-    // If they are the creator, they can also book themselves in addition to being the creator.
     const canBook = user.role === 'client' || user.role === 'owner';
 
     return (

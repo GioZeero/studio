@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -7,11 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Dumbbell, Loader2, ShieldBan } from 'lucide-react';
+import { Dumbbell, Loader2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, runTransaction } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Home() {
@@ -38,6 +39,7 @@ export default function Home() {
 
     setIsSubmitting(true);
     const trimmedName = name.trim();
+    const user = { name: trimmedName, role };
 
     try {
       const userRef = doc(db, 'users', trimmedName);
@@ -45,7 +47,6 @@ export default function Home() {
 
       if (userSnap.exists()) {
         const existingUser = userSnap.data();
-
         if (existingUser.role !== role) {
           toast({
             variant: "destructive",
@@ -55,9 +56,6 @@ export default function Home() {
           setIsSubmitting(false);
           return;
         }
-        localStorage.setItem('gymUser', JSON.stringify({ name: trimmedName, role }));
-        router.push(`/agenda`);
-
       } else {
         const newUser: { name: string; role: 'owner' | 'client'; subscriptionExpiry?: string, isBlocked?: boolean } = {
           name: trimmedName,
@@ -72,18 +70,18 @@ export default function Home() {
           newUser.subscriptionExpiry = expiryDate.toISOString();
           
           const bankRef = doc(db, 'bank', 'total');
-          const bankSnap = await getDoc(bankRef);
-          if (!bankSnap.exists()) {
-              await setDoc(bankRef, { amount: 25 });
-          } else {
-              await setDoc(bankRef, { amount: (bankSnap.data().amount || 0) + 25 }, { merge: true });
-          }
+          await runTransaction(db, async (transaction) => {
+              const bankSnap = await transaction.get(bankRef);
+              const currentAmount = bankSnap.exists() ? bankSnap.data().amount : 0;
+              transaction.set(bankRef, { amount: currentAmount + 25 }, { merge: true });
+          });
         }
-
         await setDoc(userRef, newUser);
-        localStorage.setItem('gymUser', JSON.stringify({ name: trimmedName, role }));
-        router.push(`/agenda`);
       }
+      
+      localStorage.setItem('gymUser', JSON.stringify(user));
+      router.push(`/agenda`);
+
     } catch (error) {
       console.error("Error during login/registration:", error);
       toast({
