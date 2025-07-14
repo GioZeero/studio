@@ -449,61 +449,33 @@ export default function AgendaView() {
   }
 
   const renderSlot = (slot: Slot) => {
-    if (user.role === 'owner') {
-      const attendees = [
-        ...(slot.createdBy ? [slot.createdBy] : []),
-        ...slot.bookedBy,
-      ];
-      const uniqueAttendees = [...new Set(attendees)];
-
-      return (
-        <Popover key={slot.id}>
-          <PopoverTrigger asChild>
-            <button
-              className={cn(
-                'group relative flex h-auto min-w-[120px] flex-grow flex-col items-start rounded-md border p-2 text-left transition-colors md:min-w-[140px] md:p-3',
-                slot.bookedBy.length > 0 ? 'bg-muted/50' : 'bg-transparent',
-                'hover:bg-accent/50'
-              )}
-            >
-              <p className="font-semibold text-sm md:text-base">{slot.timeRange}</p>
-              <p className="text-xs text-muted-foreground md:text-sm">
-                {slot.bookedBy.length > 0 ? `${slot.bookedBy.length} prenotati` : 'Libero'}
-              </p>
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-4">
-            <div className="space-y-2 text-sm">
-                <p className="font-semibold text-base mb-2">Persone presenti</p>
-                {uniqueAttendees.length > 0 ? (
-                    <div className="max-h-32 overflow-y-auto pr-2">
-                        <ul className="list-disc list-inside space-y-1.5">
-                            {uniqueAttendees.map((name, index) => <li key={index}>{name}</li>)}
-                        </ul>
-                    </div>
-                ) : (
-                    <p className="text-muted-foreground">Nessuna persona prenotata.</p>
-                )}
-            </div>
-          </PopoverContent>
-        </Popover>
-      );
-    }
-
-    const isBookedByUser = slot.bookedBy.includes(user.name);
+    const isBookedByUser = user && slot.bookedBy.includes(user.name);
+    const isOwner = user.role === 'owner';
     const isProcessing = bookingSlotId === slot.id;
+
+    // The owner who created the slot is always "present" in a sense.
+    // We check if their name is in `bookedBy` for explicit booking.
+    const isOwnerPresent = isOwner && isBookedByUser;
+
+    const attendees = [...new Set([...(slot.createdBy ? [slot.createdBy] : []),...slot.bookedBy,])];
+    
+    // For owners, if they are not the creator of the slot, they can book.
+    // If they are the creator, they can also book themselves in addition to being the creator.
+    const canBook = user.role === 'client' || user.role === 'owner';
 
     return (
         <button
             key={slot.id}
-            disabled={!!bookingSlotId}
+            disabled={!!bookingSlotId || !canBook}
             onClick={() => {
-                setSelectedSlot(slot);
-                setBookingModalOpen(true);
+                if (canBook) {
+                    setSelectedSlot(slot);
+                    setBookingModalOpen(true);
+                }
             }}
             className={cn(
                 "group relative flex h-auto min-w-[120px] flex-grow flex-col items-start rounded-md border p-2 text-left transition-all disabled:opacity-50 md:min-w-[140px] md:p-3",
-                isBookedByUser 
+                (isBookedByUser || (isOwner && slot.createdBy === user.name && !isBookedByUser))
                     ? "border-primary bg-primary/10" 
                     : "border-border bg-transparent hover:bg-accent/50",
                 isProcessing && "animate-pulse"
@@ -511,11 +483,16 @@ export default function AgendaView() {
         >
             {isProcessing && <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="h-4 w-4 animate-spin"/></div>}
             <p className="font-semibold text-sm md:text-base">{slot.timeRange}</p>
+            
             <p className="text-xs text-muted-foreground md:text-sm">
-              {slot.bookedBy.length} prenotati
+                {isOwner ? `${attendees.length} presenti` : `${slot.bookedBy.length} prenotati`}
             </p>
-            {isBookedByUser && !isProcessing && (
-              <div className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary" />
+
+            {(isBookedByUser) && !isProcessing && (
+              <div className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary" title="Prenotato da te" />
+            )}
+             {isOwner && slot.createdBy === user.name && !isBookedByUser && !isProcessing && (
+              <div className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary/50" title="Creato da te" />
             )}
         </button>
     );

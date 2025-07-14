@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -55,8 +56,10 @@ export function BookingConfirmationModal({ isOpen, onOpenChange, slot, user, onC
                   {uniqueAttendees.map((name, i) => (
                     <div key={i}>
                       {name}
-                      {name === user.name && ' (Tu)'}
-                      {name === slot.createdBy && name !== user.name && ' (Proprietario)'}
+                      {name === user.name && user.role !== 'owner' && ' (Tu)'}
+                      {name === user.name && user.role === 'owner' && !isBookedByUser && ' (Tu, Creatore)'}
+                      {name === user.name && user.role === 'owner' && isBookedByUser && ' (Tu, Prenotato)'}
+                      {name !== user.name && slot.createdBy === name && ' (Creatore)'}
                     </div>
                   ))}
                 </div>
