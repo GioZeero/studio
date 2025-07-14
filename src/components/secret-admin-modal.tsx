@@ -24,7 +24,7 @@ import { Label } from './ui/label';
 import { ScrollArea } from './ui/scroll-area';
 import { Skeleton } from './ui/skeleton';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, writeBatch, updateDoc, getDoc, runTransaction, increment } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, writeBatch, getDoc, runTransaction } from 'firebase/firestore';
 import type { ClientData } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, ShieldCheck, ShieldX, UserCog } from 'lucide-react';
@@ -75,28 +75,58 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
 
     setIsSaving(true);
     const userRef = doc(db, 'users', client.id);
+    const bankRef = doc(db, 'bank', 'total');
     const isBlocking = !client.isBlocked;
 
     try {
-        if (isBlocking) {
-            // If blocking, run a transaction to block user and subtract from bank
-            const bankRef = doc(db, 'bank', 'total');
-            await runTransaction(db, async (transaction) => {
-                transaction.update(userRef, { isBlocked: true });
-                transaction.set(bankRef, { amount: increment(-25) }, { merge: true });
-            });
-        } else {
-            // If unblocking, just update the user's status
-            await updateDoc(userRef, { isBlocked: false });
-        }
-        
-        // Update local state
-        setClients(clients.map(c => c.id === client.id ? { ...c, isBlocked: isBlocking } : c));
-        
-        toast({
-            title: 'Successo!',
-            description: `${client.name} è stato ${isBlocking ? 'bloccato' : 'sbloccato'}. ${isBlocking ? '25€ sono stati stornati dalla cassa.' : ''}`,
+        await runTransaction(db, async (transaction) => {
+            const bankSnap = await transaction.get(bankRef);
+            let currentAmount = bankSnap.exists() ? bankSnap.data().amount : 0;
+            
+            if (isBlocking) {
+                // Logic for BLOCKING a user
+                let amountToSubtract = 0;
+                if (client.subscriptionExpiry) {
+                    const expiryDate = new Date(client.subscriptionExpiry);
+                    const now = new Date();
+                    if (expiryDate > now) {
+                        const diffTime = expiryDate.getTime() - now.getTime();
+                        const diffDays = diffTime / (1000 * 60 * 60 * 24);
+                        const remainingMonths = Math.floor(diffDays / 30);
+                        
+                        if (remainingMonths > 0) {
+                            amountToSubtract = remainingMonths * 25;
+                        }
+                    }
+                }
+                
+                transaction.update(userRef, { isBlocked: true, subscriptionExpiry: new Date(0).toISOString() }); // Set expiry to past
+                transaction.set(bankRef, { amount: currentAmount - amountToSubtract }, { merge: true });
+
+                toast({
+                    title: 'Successo!',
+                    description: `${client.name} è stato bloccato. ${amountToSubtract > 0 ? `Rimborso di ${amountToSubtract}€ effettuato.` : 'Nessun rimborso applicabile.'}`,
+                });
+
+            } else {
+                // Logic for UNBLOCKING a user (simulates new payment)
+                const newExpiryDate = new Date();
+                newExpiryDate.setDate(newExpiryDate.getDate() + 30); // Add 30 days for new subscription
+                newExpiryDate.setHours(23, 59, 59, 999);
+                
+                transaction.update(userRef, { isBlocked: false, subscriptionExpiry: newExpiryDate.toISOString() });
+                transaction.set(bankRef, { amount: currentAmount + 25 }, { merge: true });
+
+                 toast({
+                    title: 'Successo!',
+                    description: `${client.name} è stato sbloccato. Aggiunti 25€ alla cassa e un mese di abbonamento.`,
+                });
+            }
         });
+
+        // Update local state after successful transaction
+        fetchClients();
+
     } catch (error) {
         console.error("Error toggling block status:", error);
         toast({ variant: 'destructive', title: 'Errore', description: 'Impossibile aggiornare lo stato.' });
@@ -221,7 +251,7 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
             <AlertDialogHeader>
                 <AlertDialogTitle>Rinomina {clientToRename?.name}</AlertDialogTitle>
                 <AlertDialogDescription>
-                    Inserisci il nuovo nome per il cliente. Questa operazione è permanente e si rifletterà automaticamente per il cliente al suo prossimo accesso.
+                    Inserisci il nuovo nome per il cliente. La modifica sarà applicata automaticamente al prossimo accesso del cliente.
                 </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="py-4">
