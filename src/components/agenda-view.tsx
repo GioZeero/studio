@@ -194,8 +194,6 @@ export default function AgendaView() {
 
   useEffect(() => {
     if (!user || isBlocked) return;
-    
-    let isCleanupDone = false;
 
     const performWeeklyReset = async () => {
       if (user.role !== 'owner' || !db) return;
@@ -300,56 +298,62 @@ export default function AgendaView() {
 
   useEffect(() => {
     let isCleanupDone = false;
-
+  
     const cleanOrphanBookings = async (currentSchedule: DaySchedule[]) => {
       if (user?.role !== 'owner' || !db || isCleanupDone || currentSchedule.length === 0) return;
-      isCleanupDone = true; 
-      
-      console.log("Owner detected. Running orphan bookings cleanup...");
-
+      isCleanupDone = true;
+  
+      console.log("Owner detected. Running orphan/blocked bookings cleanup...");
+  
       try {
         const usersSnapshot = await getDocs(collection(db, 'users'));
-        
+  
         const validUserNames = new Set(
-            usersSnapshot.docs
-                .map(d => d.data() as AppUser)
-                .filter(u => !u.isBlocked)
-                .map(u => u.name)
+          usersSnapshot.docs
+            .map(doc => doc.data() as AppUser)
+            .filter(u => !u.isBlocked)
+            .map(u => u.name)
         );
-        
+  
         const batch = writeBatch(db);
         let changesMade = false;
-
+  
         currentSchedule.forEach(daySchedule => {
           const dayRef = doc(db, 'schedule', daySchedule.day);
-          
-          const cleanSlots = (slots: Slot[]) => {
-              return slots.map(slot => {
-                  if (!slot.bookedBy || slot.bookedBy.length === 0) return slot;
-                  
-                  const originalBookedBy = slot.bookedBy;
-                  const cleanedBookedBy = originalBookedBy.filter(name => validUserNames.has(name));
-                  
-                  if (originalBookedBy.length !== cleanedBookedBy.length) {
-                      changesMade = true;
-                      console.log(`Cleaning slot ${slot.id} on ${daySchedule.day}. Removed ${originalBookedBy.length - cleanedBookedBy.length} orphan/blocked booking(s).`);
-                      return { ...slot, bookedBy: cleanedBookedBy };
-                  }
-                  return slot;
-              });
+  
+          const cleanSlots = (slots: Slot[], period: 'morning' | 'afternoon') => {
+            let periodChanged = false;
+            const updatedSlots = slots.map(slot => {
+              if (!slot.bookedBy || slot.bookedBy.length === 0) {
+                return slot;
+              }
+  
+              const originalBookedBy = slot.bookedBy;
+              const cleanedBookedBy = originalBookedBy.filter(name => validUserNames.has(name));
+  
+              if (cleanedBookedBy.length < originalBookedBy.length) {
+                changesMade = true;
+                periodChanged = true;
+                console.log(`Cleaning slot ${slot.id} on ${daySchedule.day}. Removed ${originalBookedBy.length - cleanedBookedBy.length} orphan/blocked booking(s).`);
+                return { ...slot, bookedBy: cleanedBookedBy };
+              }
+  
+              return slot;
+            });
+            return { updatedSlots, periodChanged };
           };
-
-          const updatedMorning = cleanSlots(daySchedule.morning);
-          const updatedAfternoon = cleanSlots(daySchedule.afternoon);
-
-          const morningChanged = JSON.stringify(daySchedule.morning) !== JSON.stringify(updatedMorning);
-          const afternoonChanged = JSON.stringify(daySchedule.afternoon) !== JSON.stringify(updatedAfternoon);
-
+  
+          const { updatedSlots: updatedMorning, periodChanged: morningChanged } = cleanSlots(daySchedule.morning, 'morning');
+          const { updatedSlots: updatedAfternoon, periodChanged: afternoonChanged } = cleanSlots(daySchedule.afternoon, 'afternoon');
+  
           if (morningChanged || afternoonChanged) {
-             batch.update(dayRef, { morning: updatedMorning, afternoon: updatedAfternoon });
+            batch.update(dayRef, {
+              ...(morningChanged && { morning: updatedMorning }),
+              ...(afternoonChanged && { afternoon: updatedAfternoon }),
+            });
           }
         });
-
+  
         if (changesMade) {
           await batch.commit();
           console.log("Orphan and blocked bookings cleanup complete. Schedule updated.");
@@ -357,12 +361,12 @@ export default function AgendaView() {
           console.log("No orphan or blocked bookings found. Cleanup not needed.");
         }
       } catch (error) {
-          console.error("Error during orphan/blocked booking cleanup:", error);
+        console.error("Error during orphan/blocked booking cleanup:", error);
       }
     };
-    
+  
     if (user?.role === 'owner' && schedule.length > 0) {
-        cleanOrphanBookings(schedule);
+      cleanOrphanBookings(schedule);
     }
   }, [schedule, user]);
 
@@ -549,7 +553,6 @@ export default function AgendaView() {
                     Non puoi accedere o prenotare nuovi orari.
                 </AlertDialogDescription>
             </AlertDialogHeader>
-            <AlertDialogAction onClick={handleLogout}>Esci</AlertDialogAction>
         </AlertDialogContent>
     </AlertDialog>
     );
