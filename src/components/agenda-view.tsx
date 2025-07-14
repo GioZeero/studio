@@ -99,6 +99,7 @@ export default function AgendaView() {
   const fetchUserData = useCallback(async (name: string, role: 'owner' | 'client') => {
     if (!db) {
       setUser({ name, role });
+      setCheckingAuth(false);
       return;
     }
     const usersCollection = collection(db, 'users');
@@ -106,25 +107,27 @@ export default function AgendaView() {
     const renamedUserSnap = await getDocs(q);
 
     let userData: AppUser | null = null;
+    let userRef;
 
     if (!renamedUserSnap.empty) {
       const renamedDoc = renamedUserSnap.docs[0];
-      userData = renamedDoc.data() as AppUser;
+      userData = { id: renamedDoc.id, ...renamedDoc.data() } as AppUser & { id: string };
+      userRef = renamedDoc.ref;
       console.log("Detected name change. Updating localStorage and cleaning up Firestore.");
       localStorage.setItem('gymUser', JSON.stringify({ name: userData.name, role: userData.role }));
       
-      await updateDoc(renamedDoc.ref, { previousName: deleteField() });
+      await updateDoc(userRef, { previousName: deleteField() });
     } else {
-      const userRef = doc(db, 'users', name);
+      userRef = doc(db, 'users', name);
       const userSnap = await getDoc(userRef);
       if (userSnap.exists()) {
-          userData = userSnap.data() as AppUser;
+          userData = { id: userSnap.id, ...userSnap.data() } as AppUser & { id: string };
       } else {
          try {
             console.warn(`User '${name}' found in localStorage but not in Firestore. Re-creating user.`);
             const newUser: Omit<AppUser, 'id'> = { name, role, isBlocked: false };
             await setDoc(userRef, newUser);
-            userData = newUser as AppUser;
+            userData = { id: name, ...newUser } as AppUser & { id: string };
           } catch (e) {
             console.error("Failed to re-create user in Firestore. Logging out.", e);
             handleLogout();
@@ -135,8 +138,9 @@ export default function AgendaView() {
     if (userData) {
       if (userData.isBlocked) {
         setIsBlocked(true);
+      } else {
+        setUser(userData);
       }
-      setUser(userData);
     }
     setCheckingAuth(false);
   }, [router]);
@@ -192,6 +196,8 @@ export default function AgendaView() {
 
   useEffect(() => {
     if (!user || isBlocked) return;
+    
+    let isCleanupDone = false;
 
     const performWeeklyReset = async () => {
       if (user.role !== 'owner' || !db) return;
@@ -235,6 +241,54 @@ export default function AgendaView() {
       }
     };
     
+    const cleanOrphanBookings = async (currentSchedule: DaySchedule[]) => {
+      if (user.role !== 'owner' || !db || isCleanupDone || currentSchedule.length === 0) return;
+      isCleanupDone = true; // Prevent multiple runs
+      
+      console.log("Owner detected. Running orphan bookings cleanup...");
+
+      try {
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        const validUserNames = new Set(usersSnapshot.docs.map(d => d.data().name));
+        
+        const batch = writeBatch(db);
+        let changesMade = false;
+
+        currentSchedule.forEach(daySchedule => {
+          const dayRef = doc(db, 'schedule', daySchedule.day);
+          
+          const cleanSlots = (slots: Slot[]) => {
+              return slots.map(slot => {
+                  const originalBookedBy = slot.bookedBy;
+                  const cleanedBookedBy = originalBookedBy.filter(name => validUserNames.has(name));
+                  
+                  if (originalBookedBy.length !== cleanedBookedBy.length) {
+                      changesMade = true;
+                      console.log(`Cleaning slot ${slot.id} on ${daySchedule.day}. Removed ${originalBookedBy.length - cleanedBookedBy.length} orphan(s).`);
+                      return { ...slot, bookedBy: cleanedBookedBy };
+                  }
+                  return slot;
+              });
+          };
+
+          const updatedMorning = cleanSlots(daySchedule.morning);
+          const updatedAfternoon = cleanSlots(daySchedule.afternoon);
+
+          // We only write to the batch if there's a change for that day
+          batch.update(dayRef, { morning: updatedMorning, afternoon: updatedAfternoon });
+        });
+
+        if (changesMade) {
+          await batch.commit();
+          console.log("Orphan bookings cleanup complete. Schedule updated.");
+        } else {
+          console.log("No orphan bookings found. Cleanup not needed.");
+        }
+      } catch (error) {
+          console.error("Error during orphan booking cleanup:", error);
+      }
+    };
+
     setLoading(true);
     performWeeklyReset().finally(() => {
         if (!db) {
@@ -247,6 +301,7 @@ export default function AgendaView() {
         const scheduleCol = collection(db, 'schedule');
         
         const unsubscribe = onSnapshot(scheduleCol, (querySnapshot) => {
+            let scheduleData: DaySchedule[];
             if (querySnapshot.empty) {
               const setupInitialSchedule = async () => {
                 if (!db) return;
@@ -259,9 +314,9 @@ export default function AgendaView() {
                 await batch.commit();
               };
               setupInitialSchedule();
-              setSchedule(initialScheduleData);
+              scheduleData = initialScheduleData;
             } else {
-              const scheduleData = querySnapshot.docs.map(docSnapshot => {
+              scheduleData = querySnapshot.docs.map(docSnapshot => {
                 const data = docSnapshot.data();
                 const transformSlot = (slot: any): Slot => ({
                   ...slot,
@@ -278,8 +333,13 @@ export default function AgendaView() {
               
               const dayOrder: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
               scheduleData.sort((a, b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day));
-              
-              setSchedule(scheduleData as DaySchedule[]);
+            }
+            
+            setSchedule(scheduleData as DaySchedule[]);
+            
+            // Run cleanup after schedule is loaded for the first time
+            if (user.role === 'owner') {
+              cleanOrphanBookings(scheduleData);
             }
             setLoading(false);
         }, (error) => {
