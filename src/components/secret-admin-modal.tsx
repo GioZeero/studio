@@ -111,7 +111,7 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
             } else {
                 // Logic for UNBLOCKING a user (simulates new payment)
                 const newExpiryDate = new Date();
-                newExpiryDate.setDate(newExpiryDate.getDate() + 30); // Add 30 days for new subscription
+                newExpiryDate.setMonth(newExpiryDate.getMonth() + 1, 0); // Set to end of current month
                 newExpiryDate.setHours(23, 59, 59, 999);
                 
                 transaction.update(userRef, { isBlocked: false, subscriptionExpiry: newExpiryDate.toISOString() });
