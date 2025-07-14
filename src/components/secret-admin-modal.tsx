@@ -24,7 +24,7 @@ import { Label } from './ui/label';
 import { ScrollArea } from './ui/scroll-area';
 import { Skeleton } from './ui/skeleton';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, writeBatch, updateDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, writeBatch, updateDoc, getDoc } from 'firebase/firestore';
 import type { ClientData } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, ShieldCheck, ShieldX, UserCog } from 'lucide-react';
@@ -34,9 +34,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 interface SecretAdminModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
+  onClientsUpdated: () => void;
 }
 
-export function SecretAdminModal({ isOpen, onOpenChange }: SecretAdminModalProps) {
+export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: SecretAdminModalProps) {
   const [clients, setClients] = useState<ClientData[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -99,11 +100,17 @@ export function SecretAdminModal({ isOpen, onOpenChange }: SecretAdminModalProps
     try {
       const oldDocRef = doc(db, 'users', originalName);
       const newDocRef = doc(db, 'users', trimmedNewName);
+      
+      const newDocSnap = await getDoc(newDocRef);
+      if (newDocSnap.exists()) {
+        throw new Error("New name already exists.");
+      }
 
       const batch = writeBatch(db);
       
-      const clientData: any = { ...clientToRename, name: trimmedNewName, previousName: originalName };
-      delete clientData.id;
+      const oldClientData = (await getDoc(oldDocRef)).data();
+      
+      const clientData = { ...oldClientData, name: trimmedNewName, previousName: originalName };
 
       batch.set(newDocRef, clientData);
       batch.delete(oldDocRef);
@@ -112,9 +119,10 @@ export function SecretAdminModal({ isOpen, onOpenChange }: SecretAdminModalProps
 
       toast({
         title: 'Successo!',
-        description: `Il nome di ${originalName} è stato cambiato in ${trimmedNewName}. Il cliente dovrà fare il login con il nuovo nome.`,
+        description: `Il nome di ${originalName} è stato cambiato in ${trimmedNewName}. Il cliente dovrà fare il login con il nuovo nome per completare l'aggiornamento.`,
       });
-      fetchClients(); 
+      onClientsUpdated(); 
+      fetchClients();
       setClientToRename(null);
       setNewName('');
     } catch (error) {
@@ -198,7 +206,7 @@ export function SecretAdminModal({ isOpen, onOpenChange }: SecretAdminModalProps
             <AlertDialogHeader>
                 <AlertDialogTitle>Rinomina {clientToRename?.name}</AlertDialogTitle>
                 <AlertDialogDescription>
-                    Inserisci il nuovo nome per il cliente. Questa operazione è permanente e richiederà al cliente di effettuare nuovamente il login con il nuovo nome.
+                    Inserisci il nuovo nome per il cliente. Questa operazione è permanente e richiederà al cliente di effettuare nuovamente il login con il nuovo nome per vederlo aggiornato.
                 </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="py-4">
@@ -213,7 +221,7 @@ export function SecretAdminModal({ isOpen, onOpenChange }: SecretAdminModalProps
             </div>
             <AlertDialogFooter>
                 <AlertDialogCancel disabled={isSaving}>Annulla</AlertDialogCancel>
-                <AlertDialogAction onClick={handleRename} disabled={isSaving || !newName.trim()}>
+                <AlertDialogAction onClick={handleRename} disabled={isSaving || !newName.trim() || newName.trim() === clientToRename?.name}>
                     {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Salva Modifiche
                 </AlertDialogAction>

@@ -134,44 +134,50 @@ export default function AgendaView() {
         setCheckingAuth(false);
         return;
       }
-      const userRef = doc(db, 'users', name);
-      const userSnap = await getDoc(userRef);
+      const usersCollection = collection(db, 'users');
+      const q = query(usersCollection, where('previousName', '==', name));
+      const renamedUserSnap = await getDocs(q);
 
-      if (userSnap.exists()) {
-        const userData = userSnap.data() as AppUser;
+      if (!renamedUserSnap.empty) {
+        const renamedDoc = renamedUserSnap.docs[0];
+        const userData = renamedDoc.data() as AppUser;
+        console.log("Detected name change. Updating localStorage and cleaning up Firestore.");
+        localStorage.setItem('gymUser', JSON.stringify({ name: userData.name, role: userData.role }));
         
-        if (userData.previousName) {
-            console.log("Detected name change. Updating localStorage and cleaning up Firestore.");
-            localStorage.setItem('gymUser', JSON.stringify({ name: userData.name, role: userData.role }));
-            await updateDoc(userRef, { previousName: deleteField() });
-            // No need to setUser here, it will be set with the full data below
-        }
-
+        await updateDoc(renamedDoc.ref, { previousName: deleteField() });
+        // The rest of the logic will proceed with the updated userData
         if (userData.isBlocked) {
             setIsBlocked(true);
             setCheckingAuth(false);
             setUser(userData);
             return;
         }
-        
         setUser(userData);
-        if (userData.role === 'client') {
-          const isExpired = !userData.subscriptionExpiry || isPast(new Date(userData.subscriptionExpiry));
-          if (isExpired) {
-            setExpiryReminderOpen(true);
-          }
-        }
       } else {
-        try {
-          console.warn(`User '${name}' found in localStorage but not in Firestore. Re-creating user.`);
-          const newUser: Omit<AppUser, 'id'> = { name, role, isBlocked: false };
-          await setDoc(userRef, newUser);
-          setUser(newUser as AppUser);
-        } catch (e) {
-          console.error("Failed to re-create user in Firestore. Logging out.", e);
-          handleLogout();
+        const userRef = doc(db, 'users', name);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+            const userData = userSnap.data() as AppUser;
+            if (userData.isBlocked) {
+                setIsBlocked(true);
+                setCheckingAuth(false);
+                setUser(userData);
+                return;
+            }
+            setUser(userData);
+        } else {
+           try {
+              console.warn(`User '${name}' found in localStorage but not in Firestore. Re-creating user.`);
+              const newUser: Omit<AppUser, 'id'> = { name, role, isBlocked: false };
+              await setDoc(userRef, newUser);
+              setUser(newUser as AppUser);
+            } catch (e) {
+              console.error("Failed to re-create user in Firestore. Logging out.", e);
+              handleLogout();
+            }
         }
       }
+
       setCheckingAuth(false);
     };
 
@@ -182,6 +188,15 @@ export default function AgendaView() {
       handleLogout();
     }
   }, [router]);
+  
+  useEffect(() => {
+    if (user?.role === 'client' && user.subscriptionExpiry) {
+        const isExpired = isPast(new Date(user.subscriptionExpiry));
+        if (isExpired) {
+            setExpiryReminderOpen(true);
+        }
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!user || isBlocked) return;
@@ -466,7 +481,6 @@ export default function AgendaView() {
                 <CardTitle>Account Bloccato</CardTitle>
                 <CardDescription>
                     Il tuo account è stato bloccato dal proprietario della palestra.
-                    Contattalo per maggiori informazioni.
                 </CardDescription>
             </CardHeader>
         </Card>
@@ -534,7 +548,7 @@ export default function AgendaView() {
                     <DeleteSlotModal isOpen={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen} schedule={schedule} onDeleteSlots={handleDeleteSlots} />
                     <ClientListModal isOpen={isClientListModalOpen} onOpenChange={setClientListModalOpen} />
                     <NotificationsModal isOpen={isNotificationsModalOpen} onOpenChange={setNotificationsModalOpen} />
-                    <SecretAdminModal isOpen={isSecretMenuOpen} onOpenChange={setSecretMenuOpen} />
+                    <SecretAdminModal isOpen={isSecretMenuOpen} onOpenChange={setSecretMenuOpen} onClientsUpdated={fetchData} />
                 </>
             )}
             {user.role === 'client' && (
