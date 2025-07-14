@@ -280,80 +280,6 @@ export default function AgendaView() {
 
   }, [user, isBlocked]);
 
-  useEffect(() => {
-    let isCleanupDone = false;
-  
-    const cleanOrphanBookings = async (currentSchedule: DaySchedule[]) => {
-      if (user?.role !== 'owner' || !db || isCleanupDone || currentSchedule.length === 0) return;
-      isCleanupDone = true;
-  
-      console.log("Owner detected. Running orphan/blocked bookings cleanup...");
-  
-      try {
-        const usersSnapshot = await getDocs(collection(db, 'users'));
-  
-        const validUserNames = new Set(
-          usersSnapshot.docs
-            .map(doc => doc.data() as AppUser)
-            .filter(u => !u.isBlocked)
-            .map(u => u.name)
-        );
-  
-        const batch = writeBatch(db);
-        let changesMade = false;
-  
-        currentSchedule.forEach(daySchedule => {
-          const dayRef = doc(db, 'schedule', daySchedule.day);
-  
-          const cleanSlots = (slots: Slot[], period: 'morning' | 'afternoon') => {
-            let periodChanged = false;
-            const updatedSlots = slots.map(slot => {
-              if (!slot.bookedBy || slot.bookedBy.length === 0) {
-                return slot; // No bookings to clean
-              }
-              
-              const originalBookedBy = slot.bookedBy;
-              const cleanedBookedBy = originalBookedBy.filter(name => validUserNames.has(name));
-  
-              if (cleanedBookedBy.length < originalBookedBy.length) {
-                changesMade = true;
-                periodChanged = true;
-                console.log(`Cleaning slot ${slot.id} on ${daySchedule.day}. Removed ${originalBookedBy.length - cleanedBookedBy.length} orphan/blocked booking(s).`);
-                return { ...slot, bookedBy: cleanedBookedBy };
-              }
-  
-              return slot; // Return original slot if no changes
-            });
-            return { updatedSlots, periodChanged };
-          };
-  
-          const { updatedSlots: updatedMorning, periodChanged: morningChanged } = cleanSlots(daySchedule.morning, 'morning');
-          const { updatedSlots: updatedAfternoon, periodChanged: afternoonChanged } = cleanSlots(daySchedule.afternoon, 'afternoon');
-  
-          if (morningChanged || afternoonChanged) {
-            batch.update(dayRef, {
-              ...(morningChanged && { morning: updatedMorning }),
-              ...(afternoonChanged && { afternoon: updatedAfternoon }),
-            });
-          }
-        });
-  
-        if (changesMade) {
-          await batch.commit();
-          console.log("Orphan and blocked bookings cleanup complete. Schedule updated.");
-        } else {
-          console.log("No orphan or blocked bookings found. Cleanup not needed.");
-        }
-      } catch (error) {
-        console.error("Error during orphan/blocked booking cleanup:", error);
-      }
-    };
-  
-    if (user?.role === 'owner' && schedule.length > 0) {
-      cleanOrphanBookings(schedule);
-    }
-  }, [schedule, user]);
-
   const handleSubscriptionUpdate = (newExpiry: string) => {
     if (user) {
       setUser({ ...user, subscriptionExpiry: newExpiry });
@@ -767,5 +693,7 @@ export default function AgendaView() {
     </div>
   );
 }
+
+    
 
     
