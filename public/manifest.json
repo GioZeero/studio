@@ -1,0 +1,21 @@
+{
+  "name": "GymAgenda",
+  "short_name": "GymAgenda",
+  "description": "App per la prenotazione di orari in palestra",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFF2E5",
+  "theme_color": "#FF7F50",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
