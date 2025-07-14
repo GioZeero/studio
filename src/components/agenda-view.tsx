@@ -249,7 +249,13 @@ export default function AgendaView() {
 
       try {
         const usersSnapshot = await getDocs(collection(db, 'users'));
-        const validUserNames = new Set(usersSnapshot.docs.map(d => d.data().name));
+        // Get names of users who are not blocked
+        const validUserNames = new Set(
+            usersSnapshot.docs
+                .map(d => d.data() as AppUser)
+                .filter(u => !u.isBlocked)
+                .map(u => u.name)
+        );
         
         const batch = writeBatch(db);
         let changesMade = false;
@@ -260,11 +266,12 @@ export default function AgendaView() {
           const cleanSlots = (slots: Slot[]) => {
               return slots.map(slot => {
                   const originalBookedBy = slot.bookedBy;
+                  // Filter out users who are not in the valid (i.e., not blocked) list
                   const cleanedBookedBy = originalBookedBy.filter(name => validUserNames.has(name));
                   
                   if (originalBookedBy.length !== cleanedBookedBy.length) {
                       changesMade = true;
-                      console.log(`Cleaning slot ${slot.id} on ${daySchedule.day}. Removed ${originalBookedBy.length - cleanedBookedBy.length} orphan(s).`);
+                      console.log(`Cleaning slot ${slot.id} on ${daySchedule.day}. Removed ${originalBookedBy.length - cleanedBookedBy.length} orphan/blocked booking(s).`);
                       return { ...slot, bookedBy: cleanedBookedBy };
                   }
                   return slot;
@@ -274,18 +281,24 @@ export default function AgendaView() {
           const updatedMorning = cleanSlots(daySchedule.morning);
           const updatedAfternoon = cleanSlots(daySchedule.afternoon);
 
-          // We only write to the batch if there's a change for that day
-          batch.update(dayRef, { morning: updatedMorning, afternoon: updatedAfternoon });
+          // We only write to the batch if there's a change for that day.
+          // This check prevents unnecessary writes.
+          const morningChanged = JSON.stringify(daySchedule.morning) !== JSON.stringify(updatedMorning);
+          const afternoonChanged = JSON.stringify(daySchedule.afternoon) !== JSON.stringify(updatedAfternoon);
+
+          if (morningChanged || afternoonChanged) {
+             batch.update(dayRef, { morning: updatedMorning, afternoon: updatedAfternoon });
+          }
         });
 
         if (changesMade) {
           await batch.commit();
-          console.log("Orphan bookings cleanup complete. Schedule updated.");
+          console.log("Orphan and blocked bookings cleanup complete. Schedule updated.");
         } else {
-          console.log("No orphan bookings found. Cleanup not needed.");
+          console.log("No orphan or blocked bookings found. Cleanup not needed.");
         }
       } catch (error) {
-          console.error("Error during orphan booking cleanup:", error);
+          console.error("Error during orphan/blocked booking cleanup:", error);
       }
     };
 
