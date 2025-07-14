@@ -158,6 +158,10 @@ export default function AgendaView() {
   }, [fetchUserData, router]);
 
   useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+  
+  useEffect(() => {
     const dayNames: DayOfWeek[] = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
     const todayIndex = new Date().getDay();
     setCurrentDay(dayNames[todayIndex]);
@@ -182,10 +186,6 @@ export default function AgendaView() {
     setDateRange(getWeekRange());
   }, []);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-  
   useEffect(() => {
     if (user?.role === 'client' && user.subscriptionExpiry) {
         const isExpired = isPast(new Date(user.subscriptionExpiry));
@@ -241,9 +241,71 @@ export default function AgendaView() {
         console.error("Error during weekly reset transaction:", error);
       }
     };
-    
+
+    setLoading(true);
+    performWeeklyReset().finally(() => {
+        if (!db) {
+            console.warn("Il database Firestore non è disponibile.");
+            setSchedule(initialScheduleData);
+            setLoading(false);
+            return;
+        }
+
+        const scheduleCol = collection(db, 'schedule');
+        
+        const unsubscribe = onSnapshot(scheduleCol, (querySnapshot) => {
+            let scheduleData: DaySchedule[];
+            if (querySnapshot.empty) {
+              const setupInitialSchedule = async () => {
+                if (!db) return;
+                const batch = writeBatch(db);
+                initialScheduleData.forEach(daySchedule => {
+                  const { day, ...dataToSet } = daySchedule;
+                  const dayRef = doc(db, 'schedule', day);
+                  batch.set(dayRef, dataToSet);
+                });
+                await batch.commit();
+              };
+              setupInitialSchedule();
+              scheduleData = initialScheduleData;
+            } else {
+              scheduleData = querySnapshot.docs.map(docSnapshot => {
+                const data = docSnapshot.data();
+                const transformSlot = (slot: any): Slot => ({
+                  ...slot,
+                  bookedBy: Array.isArray(slot.bookedBy) ? slot.bookedBy : [],
+                });
+
+                return {
+                  day: docSnapshot.id as DayOfWeek,
+                  morning: (data.morning || []).map(transformSlot),
+                  afternoon: (data.afternoon || []).map(transformSlot),
+                  isOpen: data.isOpen || false,
+                };
+              });
+              
+              const dayOrder: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+              scheduleData.sort((a, b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day));
+            }
+            
+            setSchedule(scheduleData);
+            setLoading(false);
+        }, (error) => {
+            console.error("Errore con il listener in tempo reale della pianificazione: ", error);
+            setSchedule(initialScheduleData);
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    });
+
+  }, [user, isBlocked]);
+
+  useEffect(() => {
+    let isCleanupDone = false;
+
     const cleanOrphanBookings = async (currentSchedule: DaySchedule[]) => {
-      if (user.role !== 'owner' || !db || isCleanupDone || currentSchedule.length === 0) return;
+      if (user?.role !== 'owner' || !db || isCleanupDone || currentSchedule.length === 0) return;
       isCleanupDone = true; 
       
       console.log("Owner detected. Running orphan bookings cleanup...");
@@ -299,69 +361,9 @@ export default function AgendaView() {
           console.error("Error during orphan/blocked booking cleanup:", error);
       }
     };
-
-    setLoading(true);
-    performWeeklyReset().finally(() => {
-        if (!db) {
-            console.warn("Il database Firestore non è disponibile.");
-            setSchedule(initialScheduleData);
-            setLoading(false);
-            return;
-        }
-
-        const scheduleCol = collection(db, 'schedule');
-        
-        const unsubscribe = onSnapshot(scheduleCol, (querySnapshot) => {
-            let scheduleData: DaySchedule[];
-            if (querySnapshot.empty) {
-              const setupInitialSchedule = async () => {
-                if (!db) return;
-                const batch = writeBatch(db);
-                initialScheduleData.forEach(daySchedule => {
-                  const { day, ...dataToSet } = daySchedule;
-                  const dayRef = doc(db, 'schedule', day);
-                  batch.set(dayRef, dataToSet);
-                });
-                await batch.commit();
-              };
-              setupInitialSchedule();
-              scheduleData = initialScheduleData;
-            } else {
-              scheduleData = querySnapshot.docs.map(docSnapshot => {
-                const data = docSnapshot.data();
-                const transformSlot = (slot: any): Slot => ({
-                  ...slot,
-                  bookedBy: Array.isArray(slot.bookedBy) ? slot.bookedBy : [],
-                });
-
-                return {
-                  day: docSnapshot.id as DayOfWeek,
-                  morning: (data.morning || []).map(transformSlot),
-                  afternoon: (data.afternoon || []).map(transformSlot),
-                  isOpen: data.isOpen || false,
-                };
-              });
-              
-              const dayOrder: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
-              scheduleData.sort((a, b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day));
-            }
-            
-            setSchedule(scheduleData as DaySchedule[]);
-            
-            if (user.role === 'owner') {
-              cleanOrphanBookings(scheduleData);
-            }
-            setLoading(false);
-        }, (error) => {
-            console.error("Errore con il listener in tempo reale della pianificazione: ", error);
-            setSchedule(initialScheduleData);
-            setLoading(false);
-        });
-
-        return () => unsubscribe();
-    });
-
-  }, [user, isBlocked]);
+    
+    cleanOrphanBookings(schedule);
+  }, [schedule, user]);
 
   const handleSubscriptionUpdate = (newExpiry: string) => {
     if (user) {
