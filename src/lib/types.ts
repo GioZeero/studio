@@ -19,6 +19,7 @@ export interface User {
   role: 'owner' | 'client';
   subscriptionExpiry?: string;
   isBlocked?: boolean;
+  previousName?: string;
 }
 
 export interface ClientData extends User {

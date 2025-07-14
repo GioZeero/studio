@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { AddSlotModal } from './add-slot-modal';
 import { DeleteSlotModal, type SlotToDelete } from './delete-slot-modal';
 import type { DayOfWeek, DaySchedule, Slot, User as AppUser } from '@/lib/types';
-import { collection, doc, onSnapshot, writeBatch, runTransaction, getDoc, setDoc, query, where, getDocs } from 'firebase/firestore';
+import { collection, doc, onSnapshot, writeBatch, runTransaction, getDoc, setDoc, query, where, getDocs, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Skeleton } from './ui/skeleton';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -139,6 +139,14 @@ export default function AgendaView() {
 
       if (userSnap.exists()) {
         const userData = userSnap.data() as AppUser;
+        
+        if (userData.previousName) {
+            console.log("Detected name change. Updating localStorage and cleaning up Firestore.");
+            localStorage.setItem('gymUser', JSON.stringify({ name: userData.name, role: userData.role }));
+            await updateDoc(userRef, { previousName: deleteField() });
+            // No need to setUser here, it will be set with the full data below
+        }
+
         if (userData.isBlocked) {
             setIsBlocked(true);
             setCheckingAuth(false);

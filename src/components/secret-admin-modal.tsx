@@ -102,7 +102,7 @@ export function SecretAdminModal({ isOpen, onOpenChange }: SecretAdminModalProps
 
       const batch = writeBatch(db);
       
-      const clientData = { ...clientToRename, name: trimmedNewName };
+      const clientData: any = { ...clientToRename, name: trimmedNewName, previousName: originalName };
       delete clientData.id;
 
       batch.set(newDocRef, clientData);
