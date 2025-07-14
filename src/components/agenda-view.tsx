@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { AddSlotModal } from './add-slot-modal';
 import { DeleteSlotModal, type SlotToDelete } from './delete-slot-modal';
 import type { DayOfWeek, DaySchedule, Slot, User as AppUser } from '@/lib/types';
-import { collection, doc, onSnapshot, writeBatch, runTransaction, getDoc, setDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, writeBatch, runTransaction, getDoc, setDoc, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Skeleton } from './ui/skeleton';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -24,6 +24,7 @@ import { isPast } from 'date-fns';
 import { NotificationsModal } from './notifications-modal';
 import { BookingConfirmationModal } from './booking-confirmation-modal';
 import { ExpensesModal } from './expenses-modal';
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 
 const initialScheduleData: DaySchedule[] = [
   { day: 'Lunedì', morning: [], afternoon: [], isOpen: false },
@@ -79,6 +80,8 @@ export default function AgendaView() {
   const [isBookingModalOpen, setBookingModalOpen] = useState(false);
   const [isExpensesModalOpen, setExpensesModalOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  const [isSecretMenuOpen, setSecretMenuOpen] = useState(false);
+  const [secretClickCount, setSecretClickCount] = useState(0);
 
   const [modalPeriod, setModalPeriod] = useState<'morning' | 'afternoon'>('morning');
   const [bookingSlotId, setBookingSlotId] = useState<string | null>(null);
@@ -127,6 +130,7 @@ export default function AgendaView() {
       }
       const userRef = doc(db, 'users', name);
       const userSnap = await getDoc(userRef);
+
 
       if (userSnap.exists()) {
         const userData = userSnap.data() as AppUser;
@@ -180,7 +184,6 @@ export default function AgendaView() {
 
       try {
         await runTransaction(db, async (transaction) => {
-          // 1. First, read the meta document to check the last reset week.
           const metaDoc = await transaction.get(metaRef);
           const lastResetWeekId = metaDoc.exists() ? metaDoc.data().lastResetWeekId : null;
 
@@ -190,10 +193,8 @@ export default function AgendaView() {
             const days: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
             const dayRefs = days.map(day => doc(db, 'schedule', day));
             
-            // 2. Perform all reads for the schedule documents.
             const dayDocs = await Promise.all(dayRefs.map(ref => transaction.get(ref)));
 
-            // 3. Now, perform all write operations.
             for (const dayDoc of dayDocs) {
               if (dayDoc.exists()) {
                 transaction.update(dayDoc.ref, { morning: [], afternoon: [], isOpen: false });
@@ -411,6 +412,16 @@ export default function AgendaView() {
     }
   };
 
+  const handleSecretClick = () => {
+    const newCount = secretClickCount + 1;
+    setSecretClickCount(newCount);
+
+    if (newCount >= 5) {
+        setSecretMenuOpen(true);
+        setSecretClickCount(0);
+    }
+  };
+
 
   if (checkingAuth || !user) {
     return (
@@ -442,13 +453,13 @@ export default function AgendaView() {
           <PopoverTrigger asChild>
             <button
               className={cn(
-                'group relative flex h-auto min-w-[120px] flex-grow flex-col items-start rounded-md border p-2 text-left transition-colors',
+                'group relative flex h-auto min-w-[120px] flex-grow flex-col items-start rounded-md border p-2 text-left transition-colors md:min-w-[140px] md:p-3',
                 slot.bookedBy.length > 0 ? 'bg-muted/50' : 'bg-transparent',
                 'hover:bg-accent/50'
               )}
             >
-              <p className="font-semibold text-sm">{slot.timeRange}</p>
-              <p className="text-xs text-muted-foreground">
+              <p className="font-semibold text-sm md:text-base">{slot.timeRange}</p>
+              <p className="text-xs text-muted-foreground md:text-sm">
                 {slot.bookedBy.length > 0 ? `${slot.bookedBy.length} prenotati` : 'Libero'}
               </p>
             </button>
@@ -483,7 +494,7 @@ export default function AgendaView() {
                 setBookingModalOpen(true);
             }}
             className={cn(
-                "group relative flex h-auto min-w-[120px] flex-grow flex-col items-start rounded-md border p-2 text-left transition-all disabled:opacity-50",
+                "group relative flex h-auto min-w-[120px] flex-grow flex-col items-start rounded-md border p-2 text-left transition-all disabled:opacity-50 md:min-w-[140px] md:p-3",
                 isBookedByUser 
                     ? "border-primary bg-primary/10" 
                     : "border-border bg-transparent hover:bg-accent/50",
@@ -491,8 +502,8 @@ export default function AgendaView() {
             )}
         >
             {isProcessing && <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="h-4 w-4 animate-spin"/></div>}
-            <p className="font-semibold text-sm">{slot.timeRange}</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="font-semibold text-sm md:text-base">{slot.timeRange}</p>
+            <p className="text-xs text-muted-foreground md:text-sm">
               {slot.bookedBy.length} prenotati
             </p>
             {isBookedByUser && !isProcessing && (
@@ -529,16 +540,32 @@ export default function AgendaView() {
                 isLoading={!!bookingSlotId}
             />
             <ExpensesModal isOpen={isExpensesModalOpen} onOpenChange={setExpensesModalOpen} user={user} />
+             <AlertDialog open={isSecretMenuOpen} onOpenChange={setSecretMenuOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>🥚 Menu Segreto Attivato! 🥚</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Hai trovato l'easter egg!
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogAction onClick={() => setSecretMenuOpen(false)}>Chiudi</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </>
       )}
       
-      <header className="p-4 md:p-6 flex justify-between items-center border-b sticky top-0 bg-background/80 backdrop-blur-sm z-10">
-        <Link href="/" className="text-2xl font-bold font-headline text-primary">GymAgenda</Link>
+      <header className="p-4 md:p-6 flex justify-between items-center border-b sticky top-0 bg-background/95 backdrop-blur-sm z-10">
+        <div onClick={handleSecretClick} className="text-2xl font-bold font-headline text-primary cursor-pointer select-none">GymAgenda</div>
         <div className="flex items-center gap-2 md:gap-4">
           {user.role === 'owner' && (
             <>
-              <Button onClick={() => setAddSlotModalOpen(true)}>
+              <Button onClick={() => setAddSlotModalOpen(true)} className="hidden sm:inline-flex">
                 <Plus className="mr-2 h-4 w-4" /> Aggiungi Orari
+              </Button>
+               <Button onClick={() => setAddSlotModalOpen(true)} size="icon" className="sm:hidden" aria-label="Aggiungi Orari">
+                <Plus className="h-4 w-4" />
               </Button>
               <Button variant="destructive" size="icon" aria-label="Cancella orario" onClick={() => setIsDeleteModalOpen(true)}>
                 <Trash2 className="h-4 w-4" />
@@ -550,7 +577,7 @@ export default function AgendaView() {
             <DropdownMenuTrigger asChild>
                 {user.role === 'owner' ? (
                     <Button variant="ghost" className="flex items-center gap-3 p-1 rounded-full h-auto">
-                        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center border">
                             <User className="h-5 w-5" />
                         </div>
                         <div className="text-left hidden md:block pr-2">
@@ -560,7 +587,7 @@ export default function AgendaView() {
                     </Button>
                 ) : (
                     <Button variant="outline" className="flex items-center gap-2 rounded-full p-1 pr-3 h-auto">
-                        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center border">
                             <User className="h-5 w-5 text-primary" />
                         </div>
                         <span className="font-semibold">{user.name}</span>
@@ -620,7 +647,7 @@ export default function AgendaView() {
 
       <main className="p-4 md:p-6 lg:p-8">
         <div className="mb-2">
-            <h2 className="text-sm font-semibold text-muted-foreground tracking-wider">{dateRange}</h2>
+            <h2 className="text-sm font-semibold text-muted-foreground tracking-wider uppercase">{dateRange}</h2>
         </div>
         { loading ? <AgendaViewLoader /> : (
           <div className="space-y-6">
@@ -632,28 +659,28 @@ export default function AgendaView() {
                 <Card 
                   key={daySchedule.day} 
                   className={cn('transition-all duration-300', {
-                    'border-2 border-accent shadow-xl shadow-accent/20': daySchedule.day === currentDay,
-                    'opacity-60 bg-muted/30': daySchedule.day !== currentDay && !hasSlots,
-                    'shadow-lg border-primary/20': daySchedule.day !== currentDay && hasSlots,
+                    'border-2 border-primary/80 shadow-lg shadow-primary/10': daySchedule.day === currentDay,
+                    'opacity-70 bg-muted/30 border-dashed': daySchedule.day !== currentDay && !hasSlots,
+                    'shadow-md border-border': daySchedule.day !== currentDay && hasSlots,
                   })}
                 >
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-2xl font-headline">
-                      <Calendar className="h-6 w-6 text-primary" />
+                    <CardTitle className="flex items-center gap-2 text-xl md:text-2xl font-headline">
+                      <Calendar className="h-5 w-5 md:h-6 md:w-6 text-primary" />
                       {daySchedule.day}
                     </CardTitle>
                     {!hasSlots && <CardDescription>Nessun orario disponibile per questo giorno.</CardDescription>}
                   </CardHeader>
                   {hasSlots && (
-                    <CardContent className="grid md:grid-cols-2 gap-6">
+                    <CardContent className="grid md:grid-cols-2 gap-x-6 gap-y-8">
                       <div className="space-y-3">
-                        <h3 className="font-semibold text-lg flex items-center gap-2"><Sun className="text-accent" /> Mattina</h3>
+                        <h3 className="font-semibold text-base md:text-lg flex items-center gap-2"><Sun className="text-accent h-5 w-5" /> Mattina</h3>
                         <div className="flex flex-wrap gap-2">
                           {daySchedule.morning.length > 0 ? daySchedule.morning.map(renderSlot) : <p className="text-sm text-muted-foreground">Nessun orario per la mattina.</p>}
                         </div>
                       </div>
                       <div className="space-y-3">
-                        <h3 className="font-semibold text-lg flex items-center gap-2"><Moon className="text-primary" /> Pomeriggio</h3>
+                        <h3 className="font-semibold text-base md:text-lg flex items-center gap-2"><Moon className="text-primary h-5 w-5" /> Pomeriggio</h3>
                         <div className="flex flex-wrap gap-2">
                           {daySchedule.afternoon.length > 0 ? daySchedule.afternoon.map(renderSlot) : <p className="text-sm text-muted-foreground">Nessun orario per il pomeriggio.</p>}
                         </div>
