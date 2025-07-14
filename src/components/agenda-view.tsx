@@ -461,12 +461,6 @@ export default function AgendaView() {
                     Contattalo per maggiori informazioni.
                 </CardDescription>
             </CardHeader>
-            <CardContent>
-                <Button onClick={handleLogout}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Esci
-                </Button>
-            </CardContent>
         </Card>
       </div>
     );
