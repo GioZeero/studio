@@ -20,6 +20,7 @@ export interface User {
   subscriptionExpiry?: string;
   isBlocked?: boolean;
   previousName?: string;
+  subscriptionStatus?: 'active' | 'suspended';
 }
 
 export interface ClientData extends User {

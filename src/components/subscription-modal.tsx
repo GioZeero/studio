@@ -21,12 +21,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import type { User } from '@/lib/types';
-import { format } from 'date-fns';
+import { format, isPast } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { doc, runTransaction, increment } from 'firebase/firestore';
+import { doc, runTransaction, increment, updateDoc } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
+import { Separator } from './ui/separator';
 
 interface SubscriptionModalProps {
   isOpen: boolean;
@@ -87,7 +88,7 @@ export function SubscriptionModal({ isOpen, onOpenChange, user, onSubscriptionUp
         const finalExpiryDate = new Date(updatedExpiryDate.getFullYear(), updatedExpiryDate.getMonth() + 1, 0);
         finalExpiryDate.setHours(23, 59, 59, 999);
 
-        transaction.update(userRef, { subscriptionExpiry: finalExpiryDate.toISOString() });
+        transaction.update(userRef, { subscriptionExpiry: finalExpiryDate.toISOString(), subscriptionStatus: 'active' });
         transaction.set(bankRef, { amount: increment(selectedOption.price) }, { merge: true });
         
         return finalExpiryDate;
@@ -112,10 +113,49 @@ export function SubscriptionModal({ isOpen, onOpenChange, user, onSubscriptionUp
     }
   };
 
+  const handleToggleSuspend = async () => {
+    if (!user || !db || isProcessing) return;
+    setIsProcessing(true);
+
+    const userRef = doc(db, 'users', user.name);
+    const newStatus = user.subscriptionStatus === 'suspended' ? 'active' : 'suspended';
+    
+    try {
+        await updateDoc(userRef, { subscriptionStatus: newStatus });
+        toast({
+            title: 'Successo!',
+            description: `Abbonamento ${newStatus === 'suspended' ? 'sospeso' : 'riattivato'}.`,
+        });
+        // This is a local update to avoid a full re-fetch, UI will update instantly
+        user.subscriptionStatus = newStatus;
+    } catch (error) {
+        console.error('Error suspending subscription:', error);
+        toast({
+            variant: 'destructive',
+            title: 'Errore',
+            description: 'Impossibile aggiornare lo stato dell\'abbonamento.',
+        });
+    } finally {
+        setIsProcessing(false);
+        onOpenChange(false);
+    }
+  };
+
   const currentMonth = format(new Date(), 'MMMM yyyy', { locale: it });
-  const expiryDate = user.subscriptionExpiry
-    ? format(new Date(user.subscriptionExpiry), 'dd MMMM yyyy', { locale: it })
-    : 'N/A';
+  
+  const isSubscriptionExpired = user.subscriptionExpiry ? isPast(new Date(user.subscriptionExpiry)) : true;
+  const isSuspended = user.subscriptionStatus === 'suspended';
+
+  const getStatusText = () => {
+    if (isSuspended) {
+        return 'Sospeso';
+    }
+    if (isSubscriptionExpired) {
+        return 'Scaduto';
+    }
+    return `Valido fino al ${format(new Date(user.subscriptionExpiry!), 'dd MMMM yyyy', { locale: it })}`;
+  };
+
 
   return (
     <>
@@ -124,7 +164,7 @@ export function SubscriptionModal({ isOpen, onOpenChange, user, onSubscriptionUp
           <DialogHeader>
             <DialogTitle>Il Mio Abbonamento</DialogTitle>
             <DialogDescription>
-              Gestisci la scadenza del tuo abbonamento.
+              Gestisci la scadenza e lo stato del tuo abbonamento.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -133,20 +173,43 @@ export function SubscriptionModal({ isOpen, onOpenChange, user, onSubscriptionUp
               <p className="font-semibold capitalize">{currentMonth}</p>
             </div>
             <div className="text-center space-y-1">
-              <p className="text-sm text-muted-foreground">Scadenza Abbonamento</p>
-              <p className="font-semibold capitalize">{expiryDate}</p>
+              <p className="text-sm text-muted-foreground">Stato Abbonamento</p>
+              <p className="font-semibold capitalize">{getStatusText()}</p>
             </div>
-          </div>
-          <DialogFooter className="flex-col sm:flex-col sm:space-x-0 gap-2">
-            <p className="text-sm text-center text-muted-foreground">Rinnova il tuo abbonamento:</p>
-            <div className="grid grid-cols-3 gap-2">
-              {options.map((opt) => (
-                <Button key={opt.months} onClick={() => handleOptionClick(opt)}>
-                  +{opt.months} {opt.months > 1 ? 'Mesi' : 'Mese'}
+
+            {(isSubscriptionExpired || isSuspended) && (
+              <>
+                <Separator />
+                <Button 
+                    variant="outline" 
+                    className="w-full" 
+                    onClick={handleToggleSuspend}
+                    disabled={isProcessing}
+                >
+                    {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {isSuspended ? 'Riattiva Abbonamento' : 'Sospendi Abbonamento'}
                 </Button>
-              ))}
-            </div>
-          </DialogFooter>
+                <p className="text-xs text-center text-muted-foreground px-4">
+                    {isSuspended ? 'Riattiva per poter rinnovare.' : 'Sospendi per non ricevere più avvisi di pagamento.'}
+                </p>
+              </>
+            )}
+
+          </div>
+          
+          {!isSuspended && (
+            <DialogFooter className="flex-col sm:flex-col sm:space-x-0 gap-2 border-t pt-6">
+                <p className="text-sm text-center text-muted-foreground">Rinnova il tuo abbonamento:</p>
+                <div className="grid grid-cols-3 gap-2">
+                {options.map((opt) => (
+                    <Button key={opt.months} onClick={() => handleOptionClick(opt)} disabled={isProcessing}>
+                    +{opt.months} {opt.months > 1 ? 'Mesi' : 'Mese'}
+                    </Button>
+                ))}
+                </div>
+            </DialogFooter>
+          )}
+
         </DialogContent>
       </Dialog>
       

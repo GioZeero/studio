@@ -170,7 +170,7 @@ export default function AgendaView() {
   }, []);
 
   useEffect(() => {
-    if (user?.role === 'client') {
+    if (user?.role === 'client' && user.subscriptionStatus !== 'suspended') {
       const now = new Date();
       const currentMonth = getMonth(now);
 

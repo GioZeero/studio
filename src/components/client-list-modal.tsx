@@ -67,6 +67,9 @@ export function ClientListModal({ isOpen, onOpenChange }: ClientListModalProps) 
   }, [isOpen]);
 
   const renderStatus = (client: ClientData) => {
+    if (client.subscriptionStatus === 'suspended') {
+      return <Badge variant="outline">Sospeso</Badge>;
+    }
     if (!client.subscriptionExpiry) {
         return <Badge variant="destructive">Non Pagato</Badge>;
     }
