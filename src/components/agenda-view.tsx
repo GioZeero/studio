@@ -168,8 +168,8 @@ export default function AgendaView() {
   }, []);
 
   useEffect(() => {
-    if (user?.role === 'client' && user.subscriptionExpiry) {
-        const isExpired = isPast(new Date(user.subscriptionExpiry));
+    if (user?.role === 'client') {
+        const isExpired = !user.subscriptionExpiry || isPast(new Date(user.subscriptionExpiry));
         if (isExpired) {
             setExpiryReminderOpen(true);
         }
