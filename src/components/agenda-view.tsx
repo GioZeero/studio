@@ -496,7 +496,7 @@ export default function AgendaView() {
 
     const attendees = [...new Set([...(slot.createdBy ? [slot.createdBy] : []),...slot.bookedBy,])];
     
-    const canBook = user.role === 'client' || user.role === 'owner';
+    const canBook = user.role === 'owner' || (user.role === 'client' && user.subscriptionStatus !== 'suspended');
 
     return (
         <button
@@ -711,3 +711,4 @@ export default function AgendaView() {
     
 
     
+
