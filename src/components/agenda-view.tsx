@@ -20,12 +20,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { ExpiryReminderModal } from './expiry-reminder-modal';
 import { SubscriptionModal } from './subscription-modal';
 import { ClientListModal } from './client-list-modal';
-import { isPast } from 'date-fns';
+import { isPast, getMonth } from 'date-fns';
 import { NotificationsModal } from './notifications-modal';
 import { BookingConfirmationModal } from './booking-confirmation-modal';
 import { ExpensesModal } from './expenses-modal';
 import { SecretAdminModal } from './secret-admin-modal';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogAction } from './ui/alert-dialog';
+import { OverduePaymentModal } from './overdue-payment-modal';
 
 const initialScheduleData: DaySchedule[] = [
   { day: 'Lunedì', morning: [], afternoon: [], isOpen: false },
@@ -78,6 +79,7 @@ export default function AgendaView() {
   const [isSubscriptionModalOpen, setSubscriptionModalOpen] = useState(false);
   const [isClientListModalOpen, setClientListModalOpen] = useState(false);
   const [isExpiryReminderOpen, setExpiryReminderOpen] = useState(false);
+  const [isOverduePaymentOpen, setOverduePaymentOpen] = useState(false);
   const [isNotificationsModalOpen, setNotificationsModalOpen] = useState(false);
   const [isBookingModalOpen, setBookingModalOpen] = useState(false);
   const [isExpensesModalOpen, setExpensesModalOpen] = useState(false);
@@ -169,10 +171,19 @@ export default function AgendaView() {
 
   useEffect(() => {
     if (user?.role === 'client') {
-        const isExpired = !user.subscriptionExpiry || isPast(new Date(user.subscriptionExpiry));
-        if (isExpired) {
-            setExpiryReminderOpen(true);
+      const now = new Date();
+      const currentMonth = getMonth(now);
+
+      if (user.subscriptionExpiry && isPast(new Date(user.subscriptionExpiry))) {
+        const expiryMonth = getMonth(new Date(user.subscriptionExpiry));
+        if (expiryMonth < currentMonth || new Date(user.subscriptionExpiry).getFullYear() < now.getFullYear()) {
+          setOverduePaymentOpen(true);
+        } else {
+          setExpiryReminderOpen(true);
         }
+      } else if (!user.subscriptionExpiry) {
+        setExpiryReminderOpen(true);
+      }
     }
   }, [user]);
 
@@ -538,6 +549,7 @@ export default function AgendaView() {
             {user.role === 'client' && (
                 <>
                     <ExpiryReminderModal isOpen={isExpiryReminderOpen} onOpenChange={setExpiryReminderOpen} user={user} onSubscriptionUpdate={handleSubscriptionUpdate} />
+                    <OverduePaymentModal isOpen={isOverduePaymentOpen} onOpenChange={setOverduePaymentOpen} user={user} onSubscriptionUpdate={handleSubscriptionUpdate} />
                     <SubscriptionModal isOpen={isSubscriptionModalOpen} onOpenChange={setSubscriptionModalOpen} user={user} onSubscriptionUpdate={handleSubscriptionUpdate} />
                 </>
             )}
@@ -693,6 +705,8 @@ export default function AgendaView() {
     </div>
   );
 }
+
+    
 
     
 
