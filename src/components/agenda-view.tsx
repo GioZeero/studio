@@ -117,12 +117,10 @@ export default function AgendaView() {
         const userData = userSnap.data() as AppUser;
         if (userData.isBlocked) {
           handleLogout();
-          // Optionally show a toast about being blocked after logout
         } else {
           setUser(userData);
         }
       } else {
-        // User data not found in Firestore, log out
         handleLogout();
       }
     } catch (error) {
@@ -161,12 +159,12 @@ export default function AgendaView() {
   }, []);
 
   useEffect(() => {
-    if (user?.role === 'client') {
-      if (user.subscriptionStatus === 'overdue') {
+    if (!user || user.role !== 'client') return;
+
+    if (user.subscriptionStatus === 'overdue') {
         setOverduePaymentOpen(true);
-      } else if (user.subscriptionStatus === 'expired') {
+    } else if (user.subscriptionStatus === 'expired') {
         setExpiryReminderOpen(true);
-      }
     }
   }, [user]);
 
@@ -230,8 +228,6 @@ export default function AgendaView() {
     });
 
     return () => unsubscribe();
-    
-
   }, [user]);
 
   const handleSubscriptionUpdate = (newExpiry: string, newStatus?: SubscriptionStatus) => {
@@ -378,8 +374,6 @@ export default function AgendaView() {
   };
 
   const handleSecretClick = () => {
-    if (user?.role !== 'owner') return;
-
     const newCount = secretClickCount + 1;
     setSecretClickCount(newCount);
 
@@ -467,13 +461,13 @@ export default function AgendaView() {
     <div className="min-h-screen bg-background text-foreground font-body">
       {user && (
         <>
+            <SecretAdminModal isOpen={isSecretMenuOpen} onOpenChange={setSecretMenuOpen} onClientsUpdated={fetchUserData} />
             {user.role === 'owner' && (
                 <>
                     <AddSlotModal isOpen={isAddSlotModalOpen} onOpenChange={setAddSlotModalOpen} onAddSlot={handleAddSlot} period={modalPeriod} onPeriodChange={setModalPeriod} />
                     <DeleteSlotModal isOpen={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen} schedule={schedule} onDeleteSlots={handleDeleteSlots} />
                     <ClientListModal isOpen={isClientListModalOpen} onOpenChange={setClientListModalOpen} />
                     <NotificationsModal isOpen={isNotificationsModalOpen} onOpenChange={setNotificationsModalOpen} />
-                    <SecretAdminModal isOpen={isSecretMenuOpen} onOpenChange={setSecretMenuOpen} onClientsUpdated={fetchUserData} />
                 </>
             )}
             {user.role === 'client' && (
@@ -641,6 +635,7 @@ export default function AgendaView() {
     
 
     
+
 
 
 
