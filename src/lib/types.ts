@@ -14,13 +14,15 @@ export interface DaySchedule {
   isOpen: boolean;
 }
 
+export type SubscriptionStatus = 'active' | 'suspended' | 'expired' | 'overdue';
+
 export interface User {
   name: string;
   role: 'owner' | 'client';
   subscriptionExpiry?: string;
   isBlocked?: boolean;
   previousName?: string;
-  subscriptionStatus?: 'active' | 'suspended';
+  subscriptionStatus?: SubscriptionStatus;
 }
 
 export interface ClientData extends User {

@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AddSlotModal } from './add-slot-modal';
 import { DeleteSlotModal, type SlotToDelete } from './delete-slot-modal';
-import type { DayOfWeek, DaySchedule, Slot, User as AppUser } from '@/lib/types';
+import type { DayOfWeek, DaySchedule, Slot, User as AppUser, SubscriptionStatus } from '@/lib/types';
 import { collection, doc, onSnapshot, writeBatch, runTransaction, getDoc, setDoc, query, where, getDocs, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Skeleton } from './ui/skeleton';
@@ -20,7 +20,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { ExpiryReminderModal } from './expiry-reminder-modal';
 import { SubscriptionModal } from './subscription-modal';
 import { ClientListModal } from './client-list-modal';
-import { isPast, getMonth } from 'date-fns';
+import { isPast, getMonth, getYear, startOfMonth } from 'date-fns';
 import { NotificationsModal } from './notifications-modal';
 import { BookingConfirmationModal } from './booking-confirmation-modal';
 import { ExpensesModal } from './expenses-modal';
@@ -169,19 +169,46 @@ export default function AgendaView() {
     setDateRange(getWeekRange());
   }, []);
 
-  useEffect(() => {
-    if (user?.role === 'client' && user.subscriptionStatus !== 'suspended') {
-      const now = new Date();
-      const currentMonth = getMonth(now);
+  const updateUserStatus = useCallback(async (userToUpdate: AppUser) => {
+    if (!db || userToUpdate.role !== 'client') return;
 
-      if (user.subscriptionExpiry && isPast(new Date(user.subscriptionExpiry))) {
-        const expiryMonth = getMonth(new Date(user.subscriptionExpiry));
-        if (expiryMonth < currentMonth || new Date(user.subscriptionExpiry).getFullYear() < now.getFullYear()) {
-          setOverduePaymentOpen(true);
-        } else {
-          setExpiryReminderOpen(true);
-        }
-      } else if (!user.subscriptionExpiry) {
+    const now = new Date();
+    const expiryDate = userToUpdate.subscriptionExpiry ? new Date(userToUpdate.subscriptionExpiry) : null;
+    let newStatus: SubscriptionStatus = 'active';
+
+    if (userToUpdate.subscriptionStatus === 'suspended') {
+      newStatus = 'suspended';
+    } else if (!expiryDate || isPast(expiryDate)) {
+      const firstDayOfCurrentMonth = startOfMonth(now);
+      if (expiryDate && expiryDate < firstDayOfCurrentMonth) {
+        newStatus = 'overdue';
+      } else {
+        newStatus = 'expired';
+      }
+    }
+
+    if (newStatus !== userToUpdate.subscriptionStatus) {
+      try {
+        const userRef = doc(db, 'users', userToUpdate.name);
+        await updateDoc(userRef, { subscriptionStatus: newStatus });
+        setUser(prevUser => prevUser ? { ...prevUser, subscriptionStatus: newStatus } : null);
+      } catch (error) {
+        console.error("Error updating user status:", error);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      updateUserStatus(user);
+    }
+  }, [user, updateUserStatus]);
+
+  useEffect(() => {
+    if (user?.role === 'client') {
+      if (user.subscriptionStatus === 'overdue') {
+        setOverduePaymentOpen(true);
+      } else if (user.subscriptionStatus === 'expired') {
         setExpiryReminderOpen(true);
       }
     }
@@ -293,7 +320,7 @@ export default function AgendaView() {
 
   const handleSubscriptionUpdate = (newExpiry: string) => {
     if (user) {
-      setUser({ ...user, subscriptionExpiry: newExpiry });
+      setUser({ ...user, subscriptionExpiry: newExpiry, subscriptionStatus: 'active' });
     }
   };
 
@@ -496,7 +523,7 @@ export default function AgendaView() {
 
     const attendees = [...new Set([...(slot.createdBy ? [slot.createdBy] : []),...slot.bookedBy,])];
     
-    const canBook = user.role === 'owner' || (user.role === 'client' && user.subscriptionStatus !== 'suspended');
+    const canBook = user.role === 'owner' || (user.role === 'client' && user.subscriptionStatus === 'active');
 
     return (
         <button
@@ -711,4 +738,5 @@ export default function AgendaView() {
     
 
     
+
 

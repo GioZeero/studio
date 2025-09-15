@@ -118,7 +118,7 @@ export function SubscriptionModal({ isOpen, onOpenChange, user, onSubscriptionUp
     setIsProcessing(true);
 
     const userRef = doc(db, 'users', user.name);
-    const newStatus = user.subscriptionStatus === 'suspended' ? 'active' : 'suspended';
+    const newStatus = user.subscriptionStatus === 'suspended' ? 'expired' : 'suspended';
     
     try {
         await updateDoc(userRef, { subscriptionStatus: newStatus });
@@ -143,17 +143,19 @@ export function SubscriptionModal({ isOpen, onOpenChange, user, onSubscriptionUp
 
   const currentMonth = format(new Date(), 'MMMM yyyy', { locale: it });
   
-  const isSubscriptionExpired = user.subscriptionExpiry ? isPast(new Date(user.subscriptionExpiry)) : true;
-  const isSuspended = user.subscriptionStatus === 'suspended';
-
   const getStatusText = () => {
-    if (isSuspended) {
+    switch (user.subscriptionStatus) {
+      case 'active':
+        return `Attivo fino al ${format(new Date(user.subscriptionExpiry!), 'dd MMMM yyyy', { locale: it })}`;
+      case 'suspended':
         return 'Sospeso';
-    }
-    if (isSubscriptionExpired) {
+      case 'overdue':
+        return 'Arretrati';
+      case 'expired':
+        return 'Scaduto';
+      default:
         return 'Scaduto';
     }
-    return `Valido fino al ${format(new Date(user.subscriptionExpiry!), 'dd MMMM yyyy', { locale: it })}`;
   };
 
 
@@ -177,7 +179,7 @@ export function SubscriptionModal({ isOpen, onOpenChange, user, onSubscriptionUp
               <p className="font-semibold capitalize">{getStatusText()}</p>
             </div>
 
-            {(isSubscriptionExpired || isSuspended) && (
+            {(user.subscriptionStatus === 'expired' || user.subscriptionStatus === 'suspended') && (
               <>
                 <Separator />
                 <Button 
@@ -187,17 +189,17 @@ export function SubscriptionModal({ isOpen, onOpenChange, user, onSubscriptionUp
                     disabled={isProcessing}
                 >
                     {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {isSuspended ? 'Riattiva Abbonamento' : 'Sospendi Abbonamento'}
+                    {user.subscriptionStatus === 'suspended' ? 'Riattiva Abbonamento' : 'Sospendi Abbonamento'}
                 </Button>
                 <p className="text-xs text-center text-muted-foreground px-4">
-                    {isSuspended ? 'Riattiva per poter rinnovare.' : 'Sospendi per non ricevere più avvisi di pagamento.'}
+                    {user.subscriptionStatus === 'suspended' ? 'Riattiva per poter rinnovare.' : 'Sospendi per non ricevere più avvisi di pagamento.'}
                 </p>
               </>
             )}
 
           </div>
           
-          {!isSuspended && (
+          {user.subscriptionStatus !== 'suspended' && user.subscriptionStatus !== 'overdue' && (
             <DialogFooter className="flex-col sm:flex-col sm:space-x-0 gap-2 border-t pt-6">
                 <p className="text-sm text-center text-muted-foreground">Rinnova il tuo abbonamento:</p>
                 <div className="grid grid-cols-3 gap-2">

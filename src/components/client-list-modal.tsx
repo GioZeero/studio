@@ -67,17 +67,21 @@ export function ClientListModal({ isOpen, onOpenChange }: ClientListModalProps) 
   }, [isOpen]);
 
   const renderStatus = (client: ClientData) => {
-    if (client.subscriptionStatus === 'suspended') {
-      return <Badge variant="outline">Sospeso</Badge>;
-    }
-    if (!client.subscriptionExpiry) {
-        return <Badge variant="destructive">Non Pagato</Badge>;
-    }
-    const expiryDate = new Date(client.subscriptionExpiry);
-    if (isPast(expiryDate)) {
+    switch (client.subscriptionStatus) {
+      case 'active':
+        return <Badge variant="secondary">Attivo fino al: {format(new Date(client.subscriptionExpiry!), 'dd MMM yy', { locale: it })}</Badge>;
+      case 'suspended':
+        return <Badge variant="outline">Sospeso</Badge>;
+      case 'overdue':
+        return <Badge variant="destructive">Arretrati</Badge>;
+      case 'expired':
+        return <Badge variant="destructive">Scaduto</Badge>;
+      default:
+        if (client.subscriptionExpiry && !isPast(new Date(client.subscriptionExpiry))) {
+           return <Badge variant="secondary">Attivo fino al: {format(new Date(client.subscriptionExpiry), 'dd MMM yy', { locale: it })}</Badge>;
+        }
         return <Badge variant="destructive">Scaduto</Badge>;
     }
-    return <Badge variant="secondary">Scade: {format(expiryDate, 'dd MMMM yyyy', { locale: it })}</Badge>;
   };
 
   return (
