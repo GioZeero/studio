@@ -25,12 +25,12 @@ import { Label } from './ui/label';
 import { ScrollArea } from './ui/scroll-area';
 import { Skeleton } from './ui/skeleton';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, writeBatch, getDoc, runTransaction } from 'firebase/firestore';
-import type { ClientData, DayOfWeek, Slot } from '@/lib/types';
+import { collection, query, where, getDocs, doc, writeBatch, getDoc, runTransaction, updateDoc } from 'firebase/firestore';
+import type { ClientData, DayOfWeek, Slot, SubscriptionStatus } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, ShieldCheck, ShieldX, UserCog } from 'lucide-react';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
-
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 interface SecretAdminModalProps {
   isOpen: boolean;
@@ -169,31 +169,31 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
     const trimmedNewName = newName.trim();
 
     try {
-      // Use a write batch for this as it's simpler than a transaction when reads aren't dependent on writes.
-      const batch = writeBatch(db);
-      
       const oldDocRef = doc(db, 'users', originalName);
       const newDocRef = doc(db, 'users', trimmedNewName);
       
-      const newDocSnap = await getDoc(newDocRef);
-      if (newDocSnap.exists()) {
-        throw new Error("New name already exists.");
-      }
-      
-      const oldClientDataSnap = await getDoc(oldDocRef);
-      if (!oldClientDataSnap.exists()) {
-        throw new Error("Original client not found.");
-      }
-      
-      const clientData = { ...oldClientDataSnap.data(), name: trimmedNewName, previousName: originalName };
+      await runTransaction(db, async (transaction) => {
+        // --- 1. READS ---
+        const newDocSnap = await transaction.get(newDocRef);
+        if (newDocSnap.exists()) {
+          throw new Error("New name already exists.");
+        }
+        const oldClientDataSnap = await transaction.get(oldDocRef);
+        if (!oldClientDataSnap.exists()) {
+          throw new Error("Original client not found.");
+        }
+        
+        const days: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+        const dayRefs = days.map(day => doc(db, 'schedule', day));
+        const dayDocs = await Promise.all(dayRefs.map(dayRef => transaction.get(dayRef)));
 
-      batch.set(newDocRef, clientData);
-      batch.delete(oldDocRef);
-      
-      const days: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
-      for (const day of days) {
-          const dayRef = doc(db, 'schedule', day);
-          const dayDoc = await getDoc(dayRef);
+        // --- 2. LOGIC & WRITES ---
+        const clientData = { ...oldClientDataSnap.data(), name: trimmedNewName, previousName: originalName };
+
+        transaction.set(newDocRef, clientData);
+        transaction.delete(oldDocRef);
+        
+        dayDocs.forEach(dayDoc => {
           if (dayDoc.exists()) {
               const data = dayDoc.data();
               const cleanSlots = (slots: Slot[]) => slots.map(slot => ({
@@ -203,11 +203,10 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
 
               const morning = cleanSlots(data.morning || []);
               const afternoon = cleanSlots(data.afternoon || []);
-              batch.update(dayRef, { morning, afternoon });
+              transaction.update(dayDoc.ref, { morning, afternoon });
           }
-      }
-
-      await batch.commit();
+        });
+      });
 
       toast({
         title: 'Successo!',
@@ -228,15 +227,57 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
     }
   };
 
+  const handleStatusChange = async (client: ClientData, newStatus: SubscriptionStatus) => {
+    if (!db || isSaving || client.subscriptionStatus === newStatus) return;
+
+    setIsSaving(true);
+    const userRef = doc(db, 'users', client.id);
+
+    try {
+        let updateData: { subscriptionStatus: SubscriptionStatus; subscriptionExpiry?: string } = {
+            subscriptionStatus: newStatus,
+        };
+
+        if (newStatus === 'active') {
+            const newExpiryDate = new Date();
+            newExpiryDate.setMonth(newExpiryDate.getMonth() + 1, 0); 
+            newExpiryDate.setHours(23, 59, 59, 999);
+            updateData.subscriptionExpiry = newExpiryDate.toISOString();
+        } else {
+             updateData.subscriptionExpiry = new Date(0).toISOString();
+        }
+
+        await updateDoc(userRef, updateData);
+
+        toast({
+            title: 'Successo!',
+            description: `Lo stato di ${client.name} è stato aggiornato a "${newStatus}".`,
+        });
+        fetchClients(); // Refreshes the list to show the new state
+    } catch (error) {
+        console.error("Error updating status:", error);
+        toast({ variant: 'destructive', title: 'Errore', description: 'Impossibile aggiornare lo stato.' });
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
+  const statusLabels: Record<SubscriptionStatus, string> = {
+    active: 'Attivo',
+    suspended: 'Sospeso',
+    expired: 'Scaduto',
+    overdue: 'Arretrato',
+  };
+
 
   return (
     <>
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><UserCog/> Pannello Amministrazione Segreto</DialogTitle>
           <DialogDescription>
-            Gestisci i clienti: modifica nomi e blocca/sblocca account. Usa con cautela.
+            Gestisci i clienti: modifica nomi, stato abbonamento e blocca/sblocca account. Usa con cautela.
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="h-96 border rounded-md">
@@ -245,6 +286,7 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
               <TableRow>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Stato Blocco</TableHead>
+                <TableHead>Stato Abbonamento</TableHead>
                 <TableHead className="text-right">Azioni</TableHead>
               </TableRow>
             </TableHeader>
@@ -254,6 +296,7 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
                   <TableRow key={i}>
                     <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-6 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-8 w-28" /></TableCell>
                     <TableCell className="text-right"><Skeleton className="h-8 w-20 ml-auto" /></TableCell>
                   </TableRow>
                 ))
@@ -272,6 +315,22 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
                         aria-label={`Blocca/Sblocca ${client.name}`}
                       />
                     </TableCell>
+                    <TableCell>
+                        <Select
+                            value={client.subscriptionStatus || 'expired'}
+                            onValueChange={(value) => handleStatusChange(client, value as SubscriptionStatus)}
+                            disabled={isSaving}
+                        >
+                            <SelectTrigger className="w-[120px]">
+                                <SelectValue placeholder="Seleziona stato" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {Object.entries(statusLabels).map(([value, label]) => (
+                                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </TableCell>
                     <TableCell className="text-right">
                       <Button variant="outline" size="sm" disabled={isSaving} onClick={() => {
                         setClientToRename(client);
@@ -284,7 +343,7 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center h-24 text-muted-foreground">Nessun cliente trovato.</TableCell>
+                  <TableCell colSpan={4} className="text-center h-24 text-muted-foreground">Nessun cliente trovato.</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -326,3 +385,5 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
     </>
   );
 }
+
+    
