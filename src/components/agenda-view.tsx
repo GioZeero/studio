@@ -69,7 +69,6 @@ function AgendaViewLoader() {
 
 export default function AgendaView() {
   const [user, setUser] = useState<AppUser | null>(null);
-  const [isBlocked, setIsBlocked] = useState(false);
   const [schedule, setSchedule] = useState<DaySchedule[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -117,7 +116,8 @@ export default function AgendaView() {
       if (userSnap.exists()) {
         const userData = userSnap.data() as AppUser;
         if (userData.isBlocked) {
-          setIsBlocked(true);
+          handleLogout();
+          // Optionally show a toast about being blocked after logout
         } else {
           setUser(userData);
         }
@@ -171,7 +171,7 @@ export default function AgendaView() {
   }, [user]);
 
   useEffect(() => {
-    if (!user || isBlocked) return;
+    if (!user) return;
 
     setLoading(true);
     
@@ -187,17 +187,19 @@ export default function AgendaView() {
     const unsubscribe = onSnapshot(scheduleCol, (querySnapshot) => {
         let scheduleData: DaySchedule[];
         if (querySnapshot.empty) {
-          const setupInitialSchedule = async () => {
-            if (!db) return;
-            const batch = writeBatch(db);
-            initialScheduleData.forEach(daySchedule => {
-              const { day, ...dataToSet } = daySchedule;
-              const dayRef = doc(db, 'schedule', day);
-              batch.set(dayRef, dataToSet);
-            });
-            await batch.commit();
-          };
-          setupInitialSchedule();
+          if (user.role === 'owner') {
+            const setupInitialSchedule = async () => {
+              if (!db) return;
+              const batch = writeBatch(db);
+              initialScheduleData.forEach(daySchedule => {
+                const { day, ...dataToSet } = daySchedule;
+                const dayRef = doc(db, 'schedule', day);
+                batch.set(dayRef, dataToSet);
+              });
+              await batch.commit();
+            };
+            setupInitialSchedule();
+          }
           scheduleData = initialScheduleData;
         } else {
           scheduleData = querySnapshot.docs.map(docSnapshot => {
@@ -230,11 +232,15 @@ export default function AgendaView() {
     return () => unsubscribe();
     
 
-  }, [user, isBlocked]);
+  }, [user]);
 
-  const handleSubscriptionUpdate = (newExpiry: string) => {
+  const handleSubscriptionUpdate = (newExpiry: string, newStatus?: SubscriptionStatus) => {
     if (user) {
-      setUser({ ...user, subscriptionExpiry: newExpiry, subscriptionStatus: 'active' });
+      setUser({ 
+          ...user, 
+          subscriptionExpiry: newExpiry, 
+          subscriptionStatus: newStatus || 'active' 
+      });
     }
   };
 
@@ -392,7 +398,8 @@ export default function AgendaView() {
     );
   }
   
-  if (isBlocked) {
+  const isUserBlocked = user && user.isBlocked;
+  if (isUserBlocked) {
     return (
        <AlertDialog open={true}>
         <AlertDialogContent>
@@ -416,11 +423,10 @@ export default function AgendaView() {
     const isOwner = user.role === 'owner';
     const isProcessing = bookingSlotId === slot.id;
 
-    const isOwnerPresent = isOwner && isBookedByUser;
-
     const attendees = [...new Set([...(slot.createdBy ? [slot.createdBy] : []),...slot.bookedBy,])];
     
-    const canBook = user.role === 'owner' || (user.role === 'client' && user.subscriptionStatus === 'active');
+    // A client can only book if their subscription is active. Owners can always book.
+    const canBook = isOwner || (user.role === 'client' && user.subscriptionStatus === 'active');
 
     return (
         <button
@@ -635,6 +641,7 @@ export default function AgendaView() {
     
 
     
+
 
 
 

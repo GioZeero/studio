@@ -94,6 +94,7 @@ export default function Home() {
             return;
         }
       } else {
+        // This is a new user
         const newUser: User = {
           name: trimmedName,
           role: role,
@@ -102,22 +103,26 @@ export default function Home() {
         };
 
         if (role === 'client' && hasPaid) {
+          // User paid on registration
           const expiryDate = new Date();
           expiryDate.setMonth(expiryDate.getMonth() + 1, 0); 
           expiryDate.setHours(23, 59, 59, 999);
           newUser.subscriptionExpiry = expiryDate.toISOString();
           
+          // Transaction to add user and update bank
           const bankRef = doc(db, 'bank', 'total');
           await runTransaction(db, async (transaction) => {
               const bankSnap = await transaction.get(bankRef);
               const currentAmount = bankSnap.exists() ? bankSnap.data().amount : 0;
+              transaction.set(userRef, newUser);
               transaction.set(bankRef, { amount: currentAmount + 25 }, { merge: true });
           });
+        } else {
+          // User did not pay, or is an owner
+          await setDoc(userRef, newUser);
         }
-        await setDoc(userRef, newUser);
       }
       
-      // Only store the name. All other data is fetched from Firestore on load.
       localStorage.setItem('gymUser', JSON.stringify({ name: trimmedName }));
       router.push(`/agenda`);
 
