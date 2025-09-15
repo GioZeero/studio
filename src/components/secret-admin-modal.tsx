@@ -25,7 +25,7 @@ import { Label } from './ui/label';
 import { ScrollArea } from './ui/scroll-area';
 import { Skeleton } from './ui/skeleton';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, writeBatch, getDoc, runTransaction, updateDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, writeBatch, getDoc, runTransaction, updateDoc, increment } from 'firebase/firestore';
 import type { ClientData, DayOfWeek, Slot, SubscriptionStatus } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, ShieldCheck, ShieldX, UserCog } from 'lucide-react';
@@ -141,7 +141,7 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
                 newExpiryDate.setHours(23, 59, 59, 999);
                 
                 // --- 3. WRITES ---
-                transaction.update(userRef, { isBlocked: false, subscriptionExpiry: newExpiryDate.toISOString() });
+                transaction.update(userRef, { isBlocked: false, subscriptionExpiry: newExpiryDate.toISOString(), subscriptionStatus: 'active' });
                 transaction.set(bankRef, { amount: currentAmount + 25 }, { merge: true });
 
                  toast({
@@ -234,26 +234,31 @@ export function SecretAdminModal({ isOpen, onOpenChange, onClientsUpdated }: Sec
     const userRef = doc(db, 'users', client.id);
 
     try {
-        let updateData: { subscriptionStatus: SubscriptionStatus; subscriptionExpiry?: string } = {
-            subscriptionStatus: newStatus,
-        };
+        await runTransaction(db, async (transaction) => {
+            let updateData: { subscriptionStatus: SubscriptionStatus; subscriptionExpiry?: string } = {
+                subscriptionStatus: newStatus,
+            };
 
-        if (newStatus === 'active') {
-            const newExpiryDate = new Date();
-            newExpiryDate.setMonth(newExpiryDate.getMonth() + 1, 0); 
-            newExpiryDate.setHours(23, 59, 59, 999);
-            updateData.subscriptionExpiry = newExpiryDate.toISOString();
-        } else {
-             updateData.subscriptionExpiry = new Date(0).toISOString();
-        }
-
-        await updateDoc(userRef, updateData);
+            if (newStatus === 'active') {
+                const bankRef = doc(db, 'bank', 'total');
+                transaction.set(bankRef, { amount: increment(25) }, { merge: true });
+                
+                const newExpiryDate = new Date();
+                newExpiryDate.setMonth(newExpiryDate.getMonth() + 1, 0); 
+                newExpiryDate.setHours(23, 59, 59, 999);
+                updateData.subscriptionExpiry = newExpiryDate.toISOString();
+            } else {
+                 updateData.subscriptionExpiry = new Date(0).toISOString();
+            }
+            
+            transaction.update(userRef, updateData);
+        });
 
         toast({
             title: 'Successo!',
             description: `Lo stato di ${client.name} è stato aggiornato a "${newStatus}".`,
         });
-        fetchClients(); // Refreshes the list to show the new state
+        fetchClients();
     } catch (error) {
         console.error("Error updating status:", error);
         toast({ variant: 'destructive', title: 'Errore', description: 'Impossibile aggiornare lo stato.' });
