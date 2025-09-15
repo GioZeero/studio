@@ -69,7 +69,6 @@ function AgendaViewLoader() {
 
 export default function AgendaView() {
   const [user, setUser] = useState<AppUser | null>(null);
-  const [checkingAuth, setCheckingAuth] = useState(true);
   const [isBlocked, setIsBlocked] = useState(false);
   const [schedule, setSchedule] = useState<DaySchedule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,48 +98,42 @@ export default function AgendaView() {
     router.replace('/');
   }, [router]);
 
-  const fetchUserData = useCallback(async (name: string) => {
-    if (!db) {
-      console.error("Firestore DB not initialized.");
+  const fetchUserData = useCallback(async () => {
+    const storedUserJSON = localStorage.getItem('gymUser');
+    if (!storedUserJSON) {
       handleLogout();
       return;
     }
+    
+    const { name } = JSON.parse(storedUserJSON);
+    if (!db || !name) {
+      handleLogout();
+      return;
+    }
+
     const userRef = doc(db, 'users', name);
     try {
-        const userSnap = await getDoc(userRef);
-        if (userSnap.exists()) {
-            const userData = { id: userSnap.id, ...userSnap.data() } as AppUser & { id: string };
-            if (userData.isBlocked) {
-                setIsBlocked(true);
-            } else {
-                setUser(userData);
-            }
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+        const userData = userSnap.data() as AppUser;
+        if (userData.isBlocked) {
+          setIsBlocked(true);
         } else {
-            console.warn(`User '${name}' not found in Firestore. Logging out.`);
-            handleLogout();
+          setUser(userData);
         }
-    } catch (error) {
-        console.error("Error fetching user data:", error);
+      } else {
+        // User data not found in Firestore, log out
         handleLogout();
-    } finally {
-        setCheckingAuth(false);
+      }
+    } catch (error) {
+      console.error("Error fetching user data:", error);
+      handleLogout();
     }
   }, [handleLogout]);
 
-  const fetchData = useCallback(() => {
-    const storedUser = localStorage.getItem('gymUser');
-    if (storedUser) {
-        const { name } = JSON.parse(storedUser);
-        setCheckingAuth(true);
-        fetchUserData(name);
-    } else {
-        router.replace('/');
-    }
-  }, [fetchUserData, router]);
-
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchUserData();
+  }, [fetchUserData]);
   
   useEffect(() => {
     const dayNames: DayOfWeek[] = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
@@ -166,41 +159,6 @@ export default function AgendaView() {
     };
     setDateRange(getWeekRange());
   }, []);
-
-  const updateUserStatus = useCallback(async (userToUpdate: AppUser) => {
-    if (!db || userToUpdate.role !== 'client') return;
-
-    const now = new Date();
-    const expiryDate = userToUpdate.subscriptionExpiry ? new Date(userToUpdate.subscriptionExpiry) : null;
-    let newStatus: SubscriptionStatus = 'active';
-
-    if (userToUpdate.subscriptionStatus === 'suspended') {
-      newStatus = 'suspended';
-    } else if (!expiryDate || isPast(expiryDate)) {
-      const firstDayOfCurrentMonth = startOfMonth(now);
-      if (expiryDate && expiryDate < firstDayOfCurrentMonth) {
-        newStatus = 'overdue';
-      } else {
-        newStatus = 'expired';
-      }
-    }
-
-    if (newStatus !== userToUpdate.subscriptionStatus) {
-      try {
-        const userRef = doc(db, 'users', userToUpdate.name);
-        await updateDoc(userRef, { subscriptionStatus: newStatus });
-        setUser(prevUser => prevUser ? { ...prevUser, subscriptionStatus: newStatus } : null);
-      } catch (error) {
-        console.error("Error updating user status:", error);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (user) {
-      updateUserStatus(user);
-    }
-  }, [user, updateUserStatus]);
 
   useEffect(() => {
     if (user?.role === 'client') {
@@ -426,19 +384,10 @@ export default function AgendaView() {
   };
 
 
-  if (checkingAuth) {
+  if (!user) {
     return (
-      <div className="min-h-screen bg-background">
-        <header className="p-4 md:p-6 flex justify-between items-center border-b sticky top-0 bg-background/80 backdrop-blur-sm z-10">
-          <Skeleton className="h-7 w-32" />
-          <div className="flex items-center gap-4">
-            <Skeleton className="h-10 w-24" />
-            <Skeleton className="h-10 w-10" />
-          </div>
-        </header>
-        <main className="p-4 md:p-6 lg:p-8">
-          <AgendaViewLoader />
-        </main>
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
+        <Loader2 className="h-16 w-16 animate-spin text-primary" />
       </div>
     );
   }
@@ -459,14 +408,6 @@ export default function AgendaView() {
             </AlertDialogHeader>
         </AlertDialogContent>
     </AlertDialog>
-    );
-  }
-
-  if (!user) {
-    return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
-            <Loader2 className="h-16 w-16 animate-spin text-primary"/>
-        </div>
     );
   }
 
@@ -526,7 +467,7 @@ export default function AgendaView() {
                     <DeleteSlotModal isOpen={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen} schedule={schedule} onDeleteSlots={handleDeleteSlots} />
                     <ClientListModal isOpen={isClientListModalOpen} onOpenChange={setClientListModalOpen} />
                     <NotificationsModal isOpen={isNotificationsModalOpen} onOpenChange={setNotificationsModalOpen} />
-                    <SecretAdminModal isOpen={isSecretMenuOpen} onOpenChange={setSecretMenuOpen} onClientsUpdated={fetchData} />
+                    <SecretAdminModal isOpen={isSecretMenuOpen} onOpenChange={setSecretMenuOpen} onClientsUpdated={fetchUserData} />
                 </>
             )}
             {user.role === 'client' && (
@@ -694,6 +635,7 @@ export default function AgendaView() {
     
 
     
+
 
 
 

@@ -1,3 +1,4 @@
+
 export type DayOfWeek = 'Lunedì' | 'Martedì' | 'Mercoledì' | 'Giovedì' | 'Venerdì' | 'Sabato' | 'Domenica';
 
 export interface Slot {
@@ -21,7 +22,6 @@ export interface User {
   role: 'owner' | 'client';
   subscriptionExpiry?: string;
   isBlocked?: boolean;
-  previousName?: string;
   subscriptionStatus?: SubscriptionStatus;
 }
 

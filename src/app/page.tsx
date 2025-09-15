@@ -12,7 +12,7 @@ import { Dumbbell, Loader2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, runTransaction, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, runTransaction } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import type { User } from '@/lib/types';
 
@@ -27,10 +27,10 @@ export default function Home() {
 
   useEffect(() => {
     const checkUser = async () => {
-      const storedUser = localStorage.getItem('gymUser');
-      if (storedUser) {
-        const { name } = JSON.parse(storedUser);
-        if (db) {
+      const storedUserJSON = localStorage.getItem('gymUser');
+      if (storedUserJSON) {
+        const { name } = JSON.parse(storedUserJSON);
+        if (db && name) {
           const userRef = doc(db, 'users', name);
           try {
             const userSnap = await getDoc(userRef);
@@ -43,30 +43,20 @@ export default function Home() {
                   description: "Questo account è stato bloccato.",
                 });
                 localStorage.removeItem('gymUser');
-                setLoading(false);
               } else {
-                 if (userData.previousName) {
-                  localStorage.setItem('gymUser', JSON.stringify({ name: userData.name, role: userData.role }));
-                  await updateDoc(userRef, { previousName: null });
-                }
                 router.push('/agenda');
               }
             } else {
+              // User in local storage doesn't exist in DB anymore
               localStorage.removeItem('gymUser');
-              setLoading(false);
             }
           } catch (error) {
-            console.error("Error checking user:", error);
+            console.error("Error checking user status:", error);
             localStorage.removeItem('gymUser');
-            setLoading(false);
           }
-        } else {
-          // If DB is not available, just go to agenda, it will handle it.
-          router.push('/agenda');
         }
-      } else {
-        setLoading(false);
       }
+      setLoading(false);
     };
     checkUser();
   }, [router, toast]);
@@ -78,14 +68,13 @@ export default function Home() {
 
     setIsSubmitting(true);
     const trimmedName = name.trim();
-    const user = { name: trimmedName, role };
-
+    
     try {
       const userRef = doc(db, 'users', trimmedName);
       const userSnap = await getDoc(userRef);
 
       if (userSnap.exists()) {
-        const existingUser = userSnap.data();
+        const existingUser = userSnap.data() as User;
         if (existingUser.role !== role) {
           toast({
             variant: "destructive",
@@ -128,7 +117,8 @@ export default function Home() {
         await setDoc(userRef, newUser);
       }
       
-      localStorage.setItem('gymUser', JSON.stringify(user));
+      // Only store the name. All other data is fetched from Firestore on load.
+      localStorage.setItem('gymUser', JSON.stringify({ name: trimmedName }));
       router.push(`/agenda`);
 
     } catch (error) {
