@@ -6,7 +6,7 @@ import { ThemeProvider } from '@/components/theme-provider';
 export const metadata: Metadata = {
   title: 'GymAgenda',
   description: 'App per la prenotazione di orari in palestra',
-  manifest: '/manifest.json',
+  manifest: '/manifest.json?v=1.0.1',
 };
 
 export default function RootLayout({
@@ -20,7 +20,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=swap" rel="stylesheet" />
-        <link rel="manifest" href="/manifest.json" />
+        <link rel="manifest" href="/manifest.json?v=1.0.1" />
       </head>
       <body className="font-body antialiased" suppressHydrationWarning>
         <ThemeProvider
