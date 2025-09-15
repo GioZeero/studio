@@ -12,8 +12,9 @@ import { Dumbbell, Loader2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, runTransaction } from 'firebase/firestore';
+import { doc, getDoc, setDoc, runTransaction, updateDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
+import type { User } from '@/lib/types';
 
 export default function Home() {
   const [role, setRole] = useState<'owner' | 'client'>('client');
@@ -25,13 +26,51 @@ export default function Home() {
   const { toast } = useToast();
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('gymUser');
-    if (storedUser) {
-      router.push('/agenda');
-    } else {
-      setLoading(false);
-    }
-  }, [router]);
+    const checkUser = async () => {
+      const storedUser = localStorage.getItem('gymUser');
+      if (storedUser) {
+        const { name } = JSON.parse(storedUser);
+        if (db) {
+          const userRef = doc(db, 'users', name);
+          try {
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+              const userData = userSnap.data() as User;
+              if (userData.isBlocked) {
+                toast({
+                  variant: "destructive",
+                  title: "Account Bloccato",
+                  description: "Questo account è stato bloccato.",
+                });
+                localStorage.removeItem('gymUser');
+                setLoading(false);
+              } else {
+                 if (userData.previousName) {
+                  localStorage.setItem('gymUser', JSON.stringify({ name: userData.name, role: userData.role }));
+                  await updateDoc(userRef, { previousName: null });
+                }
+                router.push('/agenda');
+              }
+            } else {
+              localStorage.removeItem('gymUser');
+              setLoading(false);
+            }
+          } catch (error) {
+            console.error("Error checking user:", error);
+            localStorage.removeItem('gymUser');
+            setLoading(false);
+          }
+        } else {
+          // If DB is not available, just go to agenda, it will handle it.
+          router.push('/agenda');
+        }
+      } else {
+        setLoading(false);
+      }
+    };
+    checkUser();
+  }, [router, toast]);
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,10 +105,11 @@ export default function Home() {
             return;
         }
       } else {
-        const newUser: { name: string; role: 'owner' | 'client'; subscriptionExpiry?: string, isBlocked?: boolean } = {
+        const newUser: User = {
           name: trimmedName,
           role: role,
           isBlocked: false,
+          subscriptionStatus: hasPaid ? 'active' : 'expired',
         };
 
         if (role === 'client' && hasPaid) {

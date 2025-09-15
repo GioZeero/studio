@@ -99,42 +99,40 @@ export default function AgendaView() {
     router.replace('/');
   }, [router]);
 
-  const fetchUserData = useCallback(async (name: string, role: 'owner' | 'client') => {
+  const fetchUserData = useCallback(async (name: string) => {
     if (!db) {
-      setUser({ name, role });
-      setCheckingAuth(false);
+      console.error("Firestore DB not initialized.");
+      handleLogout();
       return;
     }
     const userRef = doc(db, 'users', name);
-    const userSnap = await getDoc(userRef);
-
-    let userData: AppUser | null = null;
-    if (userSnap.exists()) {
-        userData = { id: userSnap.id, ...userSnap.data() } as AppUser & { id: string };
-    } else {
-        console.warn(`User '${name}' not found in Firestore during auth check. Logging out.`);
+    try {
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+            const userData = { id: userSnap.id, ...userSnap.data() } as AppUser & { id: string };
+            if (userData.isBlocked) {
+                setIsBlocked(true);
+            } else {
+                setUser(userData);
+            }
+        } else {
+            console.warn(`User '${name}' not found in Firestore. Logging out.`);
+            handleLogout();
+        }
+    } catch (error) {
+        console.error("Error fetching user data:", error);
         handleLogout();
-        return;
+    } finally {
+        setCheckingAuth(false);
     }
-
-    if (userData) {
-      if (userData.isBlocked) {
-        setIsBlocked(true);
-      } else {
-        setUser(userData);
-      }
-    } else {
-        handleLogout();
-    }
-    setCheckingAuth(false);
   }, [handleLogout]);
 
   const fetchData = useCallback(() => {
     const storedUser = localStorage.getItem('gymUser');
     if (storedUser) {
-        const { name, role } = JSON.parse(storedUser);
+        const { name } = JSON.parse(storedUser);
         setCheckingAuth(true);
-        fetchUserData(name, role);
+        fetchUserData(name);
     } else {
         router.replace('/');
     }
@@ -217,104 +215,62 @@ export default function AgendaView() {
   useEffect(() => {
     if (!user || isBlocked) return;
 
-    const performWeeklyReset = async () => {
-      if (user.role !== 'owner' || !db) return;
-
-      const getWeekIdForDate = (date: Date): string => {
-        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-        d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-        const weekNumber = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-        return `${d.getUTCFullYear()}-W${weekNumber}`;
-      };
-
-      const currentWeekId = getWeekIdForDate(new Date());
-      const metaRef = doc(db, 'app_meta', 'schedule_state');
-
-      try {
-        await runTransaction(db, async (transaction) => {
-          const metaDoc = await transaction.get(metaRef);
-          const lastResetWeekId = metaDoc.exists() ? metaDoc.data().lastResetWeekId : null;
-
-          if (currentWeekId !== lastResetWeekId) {
-            console.log(`New week detected (current: ${currentWeekId}, last: ${lastResetWeekId}). Performing weekly schedule reset.`);
-            
-            const days: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
-            const dayRefs = days.map(day => doc(db, 'schedule', day));
-            
-            const dayDocs = await Promise.all(dayRefs.map(ref => transaction.get(ref)));
-
-            for (const dayDoc of dayDocs) {
-              if (dayDoc.exists()) {
-                transaction.update(dayDoc.ref, { morning: [], afternoon: [], isOpen: false });
-              }
-            }
-
-            transaction.set(metaRef, { lastResetWeekId: currentWeekId });
-            console.log(`Weekly reset successful. New week ID: ${currentWeekId}`);
-          }
-        });
-      } catch (error) {
-        console.error("Error during weekly reset transaction:", error);
-      }
-    };
-
     setLoading(true);
-    performWeeklyReset().finally(() => {
-        if (!db) {
-            console.warn("Il database Firestore non è disponibile.");
-            setSchedule(initialScheduleData);
-            setLoading(false);
-            return;
+    
+    if (!db) {
+        console.warn("Il database Firestore non è disponibile.");
+        setSchedule(initialScheduleData);
+        setLoading(false);
+        return;
+    }
+
+    const scheduleCol = collection(db, 'schedule');
+    
+    const unsubscribe = onSnapshot(scheduleCol, (querySnapshot) => {
+        let scheduleData: DaySchedule[];
+        if (querySnapshot.empty) {
+          const setupInitialSchedule = async () => {
+            if (!db) return;
+            const batch = writeBatch(db);
+            initialScheduleData.forEach(daySchedule => {
+              const { day, ...dataToSet } = daySchedule;
+              const dayRef = doc(db, 'schedule', day);
+              batch.set(dayRef, dataToSet);
+            });
+            await batch.commit();
+          };
+          setupInitialSchedule();
+          scheduleData = initialScheduleData;
+        } else {
+          scheduleData = querySnapshot.docs.map(docSnapshot => {
+            const data = docSnapshot.data();
+            const transformSlot = (slot: any): Slot => ({
+              ...slot,
+              bookedBy: Array.isArray(slot.bookedBy) ? slot.bookedBy : [],
+            });
+
+            return {
+              day: docSnapshot.id as DayOfWeek,
+              morning: (data.morning || []).map(transformSlot),
+              afternoon: (data.afternoon || []).map(transformSlot),
+              isOpen: data.isOpen || false,
+            };
+          });
+          
+          const dayOrder: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+          scheduleData.sort((a, b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day));
         }
-
-        const scheduleCol = collection(db, 'schedule');
         
-        const unsubscribe = onSnapshot(scheduleCol, (querySnapshot) => {
-            let scheduleData: DaySchedule[];
-            if (querySnapshot.empty) {
-              const setupInitialSchedule = async () => {
-                if (!db) return;
-                const batch = writeBatch(db);
-                initialScheduleData.forEach(daySchedule => {
-                  const { day, ...dataToSet } = daySchedule;
-                  const dayRef = doc(db, 'schedule', day);
-                  batch.set(dayRef, dataToSet);
-                });
-                await batch.commit();
-              };
-              setupInitialSchedule();
-              scheduleData = initialScheduleData;
-            } else {
-              scheduleData = querySnapshot.docs.map(docSnapshot => {
-                const data = docSnapshot.data();
-                const transformSlot = (slot: any): Slot => ({
-                  ...slot,
-                  bookedBy: Array.isArray(slot.bookedBy) ? slot.bookedBy : [],
-                });
-
-                return {
-                  day: docSnapshot.id as DayOfWeek,
-                  morning: (data.morning || []).map(transformSlot),
-                  afternoon: (data.afternoon || []).map(transformSlot),
-                  isOpen: data.isOpen || false,
-                };
-              });
-              
-              const dayOrder: DayOfWeek[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
-              scheduleData.sort((a, b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day));
-            }
-            
-            setSchedule(scheduleData);
-            setLoading(false);
-        }, (error) => {
-            console.error("Errore con il listener in tempo reale della pianificazione: ", error);
-            setSchedule(initialScheduleData);
-            setLoading(false);
-        });
-
-        return () => unsubscribe();
+        setSchedule(scheduleData);
+        setLoading(false);
+    }, (error) => {
+        console.error("Errore con il listener in tempo reale della pianificazione: ", error);
+        setSchedule(initialScheduleData);
+        setLoading(false);
     });
+
+    return () => unsubscribe();
+    
 
   }, [user, isBlocked]);
 
@@ -738,5 +694,6 @@ export default function AgendaView() {
     
 
     
+
 
 
